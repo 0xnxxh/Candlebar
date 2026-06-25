@@ -1,0 +1,9 @@
+.DS_Store
+.codex/
+.build/
+.swiftpm/
+dist/
+Vendor/
+sparkle_private_key
+*.xcuserstate
+*.xcuserdata/
