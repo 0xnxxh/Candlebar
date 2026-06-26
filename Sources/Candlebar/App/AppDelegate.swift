@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Sparkle
 import SwiftUI
 
@@ -11,15 +12,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         userDriverDelegate: nil,
     )
     private var statusItem: NSStatusItem?
-    private var panel: NSPanel?
+    private var popover: NSPopover?
     private var currentPanelSize = MainPanelLayout.collapsedSize
+    private var preferencesCancellable: AnyCancellable?
+    private var outsideGlobalClickMonitor: Any?
+    private var outsideLocalClickMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         configureStatusItem()
     }
 
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        false
+    }
+
     private func configureStatusItem() {
+        configureMainMenu()
         if statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.button?.target = self
@@ -27,27 +36,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem = item
         }
 
-        if panel == nil {
-            let hostingView = NSHostingView(rootView: makeMainPanelView())
-            let panel = NSPanel(
-                contentRect: NSRect(origin: .zero, size: MainPanelLayout.collapsedSize),
-                styleMask: [.borderless, .nonactivatingPanel],
-                backing: .buffered,
-                defer: false,
-            )
-            panel.contentView = hostingView
-            panel.backgroundColor = .clear
-            panel.hasShadow = true
-            panel.isMovable = false
-            panel.isReleasedWhenClosed = false
-            panel.level = .statusBar
-            self.panel = panel
+        if popover == nil {
+            let hostingController = NSHostingController(rootView: makeMainPanelView())
+            hostingController.view.frame.size = MainPanelLayout.collapsedSize
+            let popover = NSPopover()
+            popover.contentSize = MainPanelLayout.collapsedSize
+            popover.contentViewController = hostingController
+            popover.animates = false
+            popover.behavior = .applicationDefined
+            self.popover = popover
         }
 
         updateStatusLabel(store.menuBarLabelText)
         store.menuBarLabelDidChange = { [weak self] text in
             self?.updateStatusLabel(text)
         }
+        observePreferences()
         QAWindowPresenter.shared.showIfNeeded(store: store)
     }
 
@@ -56,16 +60,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func togglePopover(_ sender: NSStatusBarButton) {
-        guard let panel else { return }
+        guard let popover else { return }
 
-        if panel.isVisible {
-            panel.orderOut(sender)
+        if popover.isShown {
+            popover.performClose(sender)
+            removeOutsideClickMonitors()
             return
         }
 
         currentPanelSize = MainPanelLayout.collapsedSize
-        panel.setFrame(panelFrame(size: currentPanelSize, sender: sender), display: true)
-        panel.orderFrontRegardless()
+        popover.contentSize = currentPanelSize
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+        updateOutsideClickMonitors()
     }
 
     private func makeMainPanelView() -> some View {
@@ -76,7 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func resizePopover(isExpanded: Bool) {
-        guard let panel else { return }
+        guard let popover else { return }
         let height = isExpanded
             ? MainPanelLayout.expandedContentMaxHeight + 80
             : MainPanelLayout.collapsedSize.height
@@ -84,31 +90,111 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             width: MainPanelLayout.width,
             height: min(height, NSScreen.main?.visibleFrame.height ?? height),
         )
-        guard panel.isVisible else { return }
-        let oldFrame = panel.frame
-        let frame = NSRect(
-            x: oldFrame.minX,
-            y: oldFrame.maxY - currentPanelSize.height,
-            width: currentPanelSize.width,
-            height: currentPanelSize.height,
-        )
-        panel.setFrame(frame, display: true)
+        popover.contentSize = currentPanelSize
     }
 
-    private func panelFrame(size: CGSize, sender: NSStatusBarButton) -> NSRect {
-        guard let window = sender.window else {
-            return NSRect(origin: .zero, size: size)
+    private func observePreferences() {
+        guard preferencesCancellable == nil else { return }
+        preferencesCancellable = store.$preferences
+            .dropFirst()
+            .sink { [weak self] preferences in
+                self?.updateOutsideClickMonitors(pinMainPanel: preferences.pinMainPanel)
+            }
+    }
+
+    private func updateOutsideClickMonitors(pinMainPanel: Bool? = nil) {
+        removeOutsideClickMonitors()
+        let isPinned = pinMainPanel ?? store.preferences.pinMainPanel
+        guard let popover, popover.isShown, !isPinned else {
+            return
         }
+        outsideGlobalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            Task { @MainActor in
+                self?.closePopoverIfClickIsOutside(event)
+            }
+        }
+        outsideLocalClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            self?.closePopoverIfClickIsOutside(event)
+            return event
+        }
+    }
 
-        let buttonFrame = sender.convert(sender.bounds, to: nil)
-        let screenFrame = window.convertToScreen(buttonFrame)
-        let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
-        let x = min(
-            max(screenFrame.midX - size.width / 2, visibleFrame.minX + 8),
-            visibleFrame.maxX - size.width - 8,
+    private func closePopoverIfClickIsOutside(_ event: NSEvent) {
+        guard let popover, popover.isShown else {
+            removeOutsideClickMonitors()
+            return
+        }
+        guard !store.preferences.pinMainPanel else {
+            removeOutsideClickMonitors()
+            return
+        }
+        guard let window = popover.contentViewController?.view.window else {
+            popover.performClose(event)
+            removeOutsideClickMonitors()
+            return
+        }
+        let point = screenPoint(for: event)
+        guard !window.frame.contains(point) else {
+            return
+        }
+        popover.performClose(event)
+        removeOutsideClickMonitors()
+    }
+
+    private func removeOutsideClickMonitors() {
+        if let outsideGlobalClickMonitor {
+            NSEvent.removeMonitor(outsideGlobalClickMonitor)
+            self.outsideGlobalClickMonitor = nil
+        }
+        if let outsideLocalClickMonitor {
+            NSEvent.removeMonitor(outsideLocalClickMonitor)
+            self.outsideLocalClickMonitor = nil
+        }
+    }
+
+    private func screenPoint(for event: NSEvent) -> NSPoint {
+        guard let window = event.window else {
+            return event.locationInWindow
+        }
+        return window.convertPoint(toScreen: event.locationInWindow)
+    }
+
+    private func configureMainMenu() {
+        guard NSApp.mainMenu == nil else { return }
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+
+        let appMenu = NSMenu()
+        appMenu.addItem(
+            withTitle: LocalizedCopy.text(.settings, language: store.preferences.language),
+            action: #selector(openSettingsFromMenu),
+            keyEquivalent: ",",
         )
-        let y = max(visibleFrame.minY + 8, screenFrame.minY - size.height - 8)
+        appMenu.addItem(
+            withTitle: "Check for Updates...",
+            action: #selector(checkForUpdatesFromMenu),
+            keyEquivalent: "",
+        )
+        appMenu.addItem(NSMenuItem.separator())
+        appMenu.addItem(
+            withTitle: LocalizedCopy.text(.quit, language: store.preferences.language),
+            action: #selector(quitFromMenu),
+            keyEquivalent: "q",
+        )
+        appMenuItem.submenu = appMenu
+        NSApp.mainMenu = mainMenu
+    }
 
-        return NSRect(x: x, y: y, width: size.width, height: size.height)
+    @objc private func openSettingsFromMenu() {
+        SettingsOpener.open(store: store)
+    }
+
+    @objc private func checkForUpdatesFromMenu() {
+        updaterController.updater.checkForUpdates()
+    }
+
+    @objc private func quitFromMenu() {
+        NSApplication.shared.terminate(nil)
     }
 }

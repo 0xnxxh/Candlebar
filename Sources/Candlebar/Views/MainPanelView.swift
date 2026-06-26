@@ -92,13 +92,28 @@ private struct HeaderView: View {
 
                     Spacer()
 
-                    Button {
-                        Task { await store.refreshAll() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
+                    HStack(spacing: 6) {
+                        Button {
+                            store.updatePinMainPanel(!store.preferences.pinMainPanel)
+                        } label: {
+                            Image(systemName: store.preferences.pinMainPanel ? "pin.fill" : "pin.slash")
+                        }
+                        .buttonStyle(PixelButtonStyle(tint: store.preferences.pinMainPanel ? PixelColors.up : PixelColors.muted))
+                        .help(
+                            LocalizedCopy.text(
+                                store.preferences.pinMainPanel ? .pinMainPanel : .pinMainPanelOff,
+                                language: store.preferences.language,
+                            ),
+                        )
+
+                        Button {
+                            Task { await store.refreshAll() }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(PixelButtonStyle())
+                        .help(LocalizedCopy.text(.refresh, language: store.preferences.language))
                     }
-                    .buttonStyle(PixelButtonStyle())
-                    .help(LocalizedCopy.text(.refresh, language: store.preferences.language))
                 }
 
                 HStack(alignment: .firstTextBaseline) {
@@ -159,7 +174,7 @@ private struct StatusFooterView: View {
             Spacer()
 
             Button {
-                SettingsOpener.open()
+                SettingsOpener.open(store: store)
             } label: {
                 Label(LocalizedCopy.text(.settings, language: store.preferences.language), systemImage: "gearshape")
                     .labelStyle(.titleAndIcon)

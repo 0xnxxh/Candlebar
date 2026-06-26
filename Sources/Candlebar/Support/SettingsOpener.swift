@@ -1,9 +1,6 @@
-import AppKit
-
 enum SettingsOpener {
     @MainActor
-    static func open() {
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+    static func open(store: AppStore) {
+        SettingsWindowPresenter.shared.open(store: store)
     }
 }

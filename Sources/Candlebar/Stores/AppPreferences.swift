@@ -6,6 +6,7 @@ struct AppPreferences: Codable, Equatable {
     var compactMenuBar: Bool
     var hideBalances: Bool
     var hideLowValueAccounts: Bool
+    var pinMainPanel: Bool
     var pixelTheme: Bool
     var priceDecimalPlaces: Int
     var language: AppLanguage
@@ -16,6 +17,7 @@ struct AppPreferences: Codable, Equatable {
         case compactMenuBar
         case hideBalances
         case hideLowValueAccounts
+        case pinMainPanel
         case pixelTheme
         case priceDecimalPlaces
         case language
@@ -27,6 +29,7 @@ struct AppPreferences: Codable, Equatable {
         compactMenuBar: Bool,
         hideBalances: Bool,
         hideLowValueAccounts: Bool,
+        pinMainPanel: Bool,
         pixelTheme: Bool,
         priceDecimalPlaces: Int,
         language: AppLanguage,
@@ -36,6 +39,7 @@ struct AppPreferences: Codable, Equatable {
         self.compactMenuBar = compactMenuBar
         self.hideBalances = hideBalances
         self.hideLowValueAccounts = hideLowValueAccounts
+        self.pinMainPanel = pinMainPanel
         self.pixelTheme = pixelTheme
         self.priceDecimalPlaces = priceDecimalPlaces
         self.language = language
@@ -48,6 +52,7 @@ struct AppPreferences: Codable, Equatable {
         compactMenuBar = try container.decode(Bool.self, forKey: .compactMenuBar)
         hideBalances = try container.decode(Bool.self, forKey: .hideBalances)
         hideLowValueAccounts = try container.decodeIfPresent(Bool.self, forKey: .hideLowValueAccounts) ?? false
+        pinMainPanel = try container.decodeIfPresent(Bool.self, forKey: .pinMainPanel) ?? false
         pixelTheme = try container.decode(Bool.self, forKey: .pixelTheme)
         priceDecimalPlaces = try container.decode(Int.self, forKey: .priceDecimalPlaces)
         language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .english
@@ -63,6 +68,7 @@ struct AppPreferences: Codable, Equatable {
         compactMenuBar: false,
         hideBalances: false,
         hideLowValueAccounts: false,
+        pinMainPanel: false,
         pixelTheme: true,
         priceDecimalPlaces: 2,
         language: .english,

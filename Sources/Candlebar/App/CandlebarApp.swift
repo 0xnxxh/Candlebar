@@ -1,23 +1,22 @@
-import SwiftUI
+import AppKit
 
 @main
-struct CandlebarApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+enum CandlebarApp {
+    @MainActor
+    static func main() {
+        runner.run()
+    }
 
-    var body: some Scene {
-        Settings {
-            SettingsView()
-                .environmentObject(appDelegate.store)
-        }
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button(LocalizedCopy.text(.settings, language: appDelegate.store.preferences.language)) {
-                    SettingsOpener.open()
-                }
-            }
-            CommandGroup(after: .appInfo) {
-                CheckForUpdatesView(updater: appDelegate.updaterController.updater)
-            }
-        }
+    @MainActor
+    private static let runner = MainRunner()
+}
+
+@MainActor
+private final class MainRunner {
+    private let appDelegate = AppDelegate()
+
+    func run() {
+        NSApplication.shared.delegate = appDelegate
+        NSApplication.shared.run()
     }
 }

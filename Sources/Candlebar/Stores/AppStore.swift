@@ -176,8 +176,7 @@ final class AppStore: ObservableObject {
     }
 
     func setDefault(_ item: WatchSymbol) {
-        preferences.defaultSymbolID = item.id
-        persist()
+        updatePreferences { $0.defaultSymbolID = item.id }
         publishMenuBarLabel()
     }
 
@@ -193,9 +192,10 @@ final class AppStore: ObservableObject {
             lastError = "\(item.symbol) ALREADY ADDED"
             return
         }
-        preferences.watchlist.append(item)
-        preferences.defaultSymbolID = preferences.defaultSymbolID ?? item.id
-        persist()
+        updatePreferences { preferences in
+            preferences.watchlist.append(item)
+            preferences.defaultSymbolID = preferences.defaultSymbolID ?? item.id
+        }
         publishMenuBarLabel()
         startTickerStream()
         Task { await refreshTickers() }
@@ -224,51 +224,49 @@ final class AppStore: ObservableObject {
     }
 
     func removeSymbols(at offsets: IndexSet) {
-        preferences.watchlist.remove(atOffsets: offsets)
-        if !preferences.watchlist.contains(where: { $0.id == preferences.defaultSymbolID }) {
-            preferences.defaultSymbolID = preferences.watchlist.first?.id
+        updatePreferences { preferences in
+            preferences.watchlist.remove(atOffsets: offsets)
+            if !preferences.watchlist.contains(where: { $0.id == preferences.defaultSymbolID }) {
+                preferences.defaultSymbolID = preferences.watchlist.first?.id
+            }
         }
-        persist()
         publishMenuBarLabel()
         startTickerStream()
     }
 
     func moveSymbols(from source: IndexSet, to destination: Int) {
-        preferences.watchlist.move(fromOffsets: source, toOffset: destination)
-        persist()
+        updatePreferences { $0.watchlist.move(fromOffsets: source, toOffset: destination) }
         publishMenuBarLabel()
     }
 
     func updateCompactMenuBar(_ value: Bool) {
-        preferences.compactMenuBar = value
-        persist()
+        updatePreferences { $0.compactMenuBar = value }
         publishMenuBarLabel()
     }
 
     func updateHideBalances(_ value: Bool) {
-        preferences.hideBalances = value
-        persist()
+        updatePreferences { $0.hideBalances = value }
     }
 
     func updateHideLowValueAccounts(_ value: Bool) {
-        preferences.hideLowValueAccounts = value
-        persist()
+        updatePreferences { $0.hideLowValueAccounts = value }
+    }
+
+    func updatePinMainPanel(_ value: Bool) {
+        updatePreferences { $0.pinMainPanel = value }
     }
 
     func updatePixelTheme(_ value: Bool) {
-        preferences.pixelTheme = value
-        persist()
+        updatePreferences { $0.pixelTheme = value }
     }
 
     func updatePriceDecimalPlaces(_ value: Double) {
-        preferences.priceDecimalPlaces = min(8, max(0, Int(value.rounded())))
-        persist()
+        updatePreferences { $0.priceDecimalPlaces = min(8, max(0, Int(value.rounded()))) }
         publishMenuBarLabel()
     }
 
     func updateLanguage(_ value: AppLanguage) {
-        preferences.language = value
-        persist()
+        updatePreferences { $0.language = value }
         publishMenuBarLabel()
     }
 
@@ -320,6 +318,13 @@ final class AppStore: ObservableObject {
 
     private func persist() {
         preferencesStore.save(preferences)
+    }
+
+    private func updatePreferences(_ transform: (inout AppPreferences) -> Void) {
+        var updated = preferences
+        transform(&updated)
+        preferences = updated
+        persist()
     }
 
     private func publishMenuBarLabel() {

@@ -28,6 +28,8 @@ enum CopyKey {
     case noneOrNotLoaded
     case on
     case off
+    case pinMainPanel
+    case pinMainPanelOff
     case pixelTheme
     case positions
     case priceDecimals
@@ -133,6 +135,8 @@ enum LocalizedCopy {
         case .noneOrNotLoaded: "NONE / NOT LOADED"
         case .on: "ON"
         case .off: "OFF"
+        case .pinMainPanel: "Keep panel open"
+        case .pinMainPanelOff: "Hide panel when clicking outside"
         case .pixelTheme: "PIXEL THEME"
         case .positions: "POSITIONS"
         case .priceDecimals: "PRICE DECIMALS"
@@ -201,6 +205,8 @@ enum LocalizedCopy {
         case .noneOrNotLoaded: "无 / 未加载"
         case .on: "开"
         case .off: "关"
+        case .pinMainPanel: "固定主界面"
+        case .pinMainPanelOff: "点击外部收回主界面"
         case .pixelTheme: "像素主题"
         case .positions: "持仓"
         case .priceDecimals: "价格小数位"
