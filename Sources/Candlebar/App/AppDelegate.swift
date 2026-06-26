@@ -12,8 +12,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         userDriverDelegate: nil,
     )
     private var statusItem: NSStatusItem?
-    private var popover: NSPopover?
+    private var mainPanel: NSPanel?
     private var currentPanelSize = MainPanelLayout.collapsedSize
+    private var isMainPanelExpanded = false
+    private var panelAnchorX: CGFloat?
+    private var panelTopY: CGFloat?
     private var preferencesCancellable: AnyCancellable?
     private var outsideGlobalClickMonitor: Any?
     private var outsideLocalClickMonitor: Any?
@@ -32,20 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             item.button?.target = self
-            item.button?.action = #selector(togglePopover(_:))
+            item.button?.action = #selector(toggleMainPanel(_:))
             statusItem = item
         }
 
-        if popover == nil {
-            let hostingController = NSHostingController(rootView: makeMainPanelView())
-            hostingController.view.frame.size = MainPanelLayout.collapsedSize
-            let popover = NSPopover()
-            popover.contentSize = MainPanelLayout.collapsedSize
-            popover.contentViewController = hostingController
-            popover.animates = false
-            popover.behavior = .applicationDefined
-            self.popover = popover
-        }
+        configureMainPanelIfNeeded()
 
         updateStatusLabel(store.menuBarLabelText)
         store.menuBarLabelDidChange = { [weak self] text in
@@ -60,38 +54,107 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem?.button?.title = text
     }
 
-    @objc private func togglePopover(_ sender: NSStatusBarButton) {
-        guard let popover else { return }
+    @objc private func toggleMainPanel(_ sender: NSStatusBarButton) {
+        guard let mainPanel else { return }
 
-        if popover.isShown {
-            popover.performClose(sender)
+        if mainPanel.isVisible {
+            mainPanel.orderOut(sender)
             removeOutsideClickMonitors()
             return
         }
 
-        currentPanelSize = MainPanelLayout.collapsedSize
-        popover.contentSize = currentPanelSize
-        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+        recordPanelAnchor(from: sender)
+        currentPanelSize = MainPanelLayout.size(isExpanded: isMainPanelExpanded)
+        panelTopY = preferredPanelTopY(from: sender)
+        mainPanel.setContentSize(currentPanelSize)
+        alignMainPanelWindow()
+        mainPanel.orderFrontRegardless()
         updateOutsideClickMonitors()
+    }
+
+    private func configureMainPanelIfNeeded() {
+        guard mainPanel == nil else { return }
+        let hostingView = NSHostingView(rootView: makeMainPanelView())
+        hostingView.frame.size = MainPanelLayout.collapsedSize
+
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: MainPanelLayout.collapsedSize),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false,
+        )
+        panel.contentView = hostingView
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.hidesOnDeactivate = false
+        panel.isFloatingPanel = true
+        panel.isOpaque = false
+        panel.isReleasedWhenClosed = false
+        panel.level = .popUpMenu
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        mainPanel = panel
     }
 
     private func makeMainPanelView() -> some View {
         MainPanelView { [weak self] isExpanded in
-            self?.resizePopover(isExpanded: isExpanded)
+            self?.resizeMainPanel(isExpanded: isExpanded)
         }
         .environmentObject(store)
     }
 
-    private func resizePopover(isExpanded: Bool) {
-        guard let popover else { return }
-        let height = isExpanded
-            ? MainPanelLayout.expandedContentMaxHeight + 80
-            : MainPanelLayout.collapsedSize.height
-        currentPanelSize = CGSize(
-            width: MainPanelLayout.width,
-            height: min(height, NSScreen.main?.visibleFrame.height ?? height),
-        )
-        popover.contentSize = currentPanelSize
+    private func resizeMainPanel(isExpanded: Bool) {
+        guard let mainPanel else { return }
+        isMainPanelExpanded = isExpanded
+        capturePanelTopIfNeeded()
+        currentPanelSize = MainPanelLayout.size(isExpanded: isExpanded)
+        mainPanel.setContentSize(currentPanelSize)
+        alignMainPanelWindow()
+    }
+
+    private func recordPanelAnchor(from button: NSStatusBarButton) {
+        guard let buttonWindow = button.window else { return }
+        let screenFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        panelAnchorX = screenFrame.midX
+    }
+
+    private func preferredPanelTopY(from button: NSStatusBarButton) -> CGFloat? {
+        guard let buttonWindow = button.window else { return nil }
+        let screenFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        return screenFrame.minY - MainPanelLayout.menuBarGap
+    }
+
+    private func capturePanelTopIfNeeded() {
+        guard let window = mainPanel, window.isVisible else { return }
+        panelTopY = window.frame.maxY
+    }
+
+    private func alignMainPanelWindow() {
+        guard
+            let window = mainPanel,
+            let anchorX = panelAnchorX,
+            let topY = panelTopY
+        else { return }
+
+        let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+        var frame = window.frame
+        frame.origin.x = anchorX - frame.width / 2
+        frame.origin.y = topY - frame.height
+
+        if let visibleFrame {
+            let inset = MainPanelLayout.screenEdgeInset
+            frame.origin.x = min(
+                max(frame.origin.x, visibleFrame.minX + inset),
+                visibleFrame.maxX - inset - frame.width,
+            )
+            frame.origin.y = min(
+                max(frame.origin.y, visibleFrame.minY + inset),
+                visibleFrame.maxY - inset - frame.height,
+            )
+        }
+
+        frame.origin.x = frame.origin.x.rounded()
+        frame.origin.y = frame.origin.y.rounded()
+        window.setFrame(frame, display: true, animate: false)
     }
 
     private func observePreferences() {
@@ -106,22 +169,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateOutsideClickMonitors(pinMainPanel: Bool? = nil) {
         removeOutsideClickMonitors()
         let isPinned = pinMainPanel ?? store.preferences.pinMainPanel
-        guard let popover, popover.isShown, !isPinned else {
+        guard let mainPanel, mainPanel.isVisible, !isPinned else {
             return
         }
         outsideGlobalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             Task { @MainActor in
-                self?.closePopoverIfClickIsOutside(event)
+                self?.closeMainPanelIfClickIsOutside(event)
             }
         }
         outsideLocalClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            self?.closePopoverIfClickIsOutside(event)
+            self?.closeMainPanelIfClickIsOutside(event)
             return event
         }
     }
 
-    private func closePopoverIfClickIsOutside(_ event: NSEvent) {
-        guard let popover, popover.isShown else {
+    private func closeMainPanelIfClickIsOutside(_ event: NSEvent) {
+        guard let mainPanel, mainPanel.isVisible else {
             removeOutsideClickMonitors()
             return
         }
@@ -129,17 +192,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             removeOutsideClickMonitors()
             return
         }
-        guard let window = popover.contentViewController?.view.window else {
-            popover.performClose(event)
-            removeOutsideClickMonitors()
-            return
-        }
         let point = screenPoint(for: event)
-        guard !window.frame.contains(point) else {
+        if let statusButton = statusItem?.button, statusButtonFrame(statusButton).contains(point) {
             return
         }
-        popover.performClose(event)
+        guard !mainPanel.frame.contains(point) else {
+            return
+        }
+        mainPanel.orderOut(event)
         removeOutsideClickMonitors()
+    }
+
+    private func statusButtonFrame(_ button: NSStatusBarButton) -> NSRect {
+        guard let buttonWindow = button.window else { return .zero }
+        return buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
     }
 
     private func removeOutsideClickMonitors() {

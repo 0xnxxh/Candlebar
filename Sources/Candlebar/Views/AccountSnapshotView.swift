@@ -269,7 +269,7 @@ private struct PositionRow: View {
         .font(PixelFont.tiny)
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
-        .overlay(Rectangle().stroke(PixelColors.line.opacity(0.35), lineWidth: 1))
+        .overlay(Rectangle().stroke(PixelColors.line, lineWidth: 1))
     }
 
     private func price(_ value: Decimal?) -> String {

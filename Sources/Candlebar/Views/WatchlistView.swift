@@ -42,7 +42,7 @@ struct WatchlistView: View {
                         }
                     }
                 }
-                .scrollIndicators(watchlistCount > WatchlistLayout.maxVisibleRows ? .visible : .hidden)
+                .scrollIndicators(.hidden)
                 .frame(height: WatchlistLayout.height(for: watchlistCount))
             }
         }

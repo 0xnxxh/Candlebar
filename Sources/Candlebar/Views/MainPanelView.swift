@@ -4,12 +4,23 @@ import SwiftUI
 enum MainPanelLayout {
     static let width: CGFloat = 400
     static let expandedFallbackScrollHeight: CGFloat = 520
+    static let menuBarGap: CGFloat = 6
+    static let screenEdgeInset: CGFloat = 8
     private static let nonScrollableExpandedHeight: CGFloat = 80
     static let collapsedSize = CGSize(width: width, height: 590)
 
     static var expandedContentMaxHeight: CGFloat {
         let visibleHeight = NSScreen.main?.visibleFrame.height ?? 560
         return max(220, visibleHeight - nonScrollableExpandedHeight)
+    }
+
+    static func size(isExpanded: Bool) -> CGSize {
+        guard isExpanded else { return collapsedSize }
+        let height = expandedContentMaxHeight + nonScrollableExpandedHeight
+        return CGSize(
+            width: width,
+            height: min(height, NSScreen.main?.visibleFrame.height ?? height),
+        )
     }
 }
 
@@ -33,16 +44,13 @@ struct MainPanelView: View {
 
     private var panelBody: some View {
         VStack(spacing: 10) {
-            if isAccountExpanded {
-                ScrollView {
-                    panelContent
-                        .frame(maxWidth: .infinity, alignment: .top)
-                }
-                .scrollIndicators(.visible)
-                .frame(maxHeight: MainPanelLayout.expandedContentMaxHeight)
-            } else {
+            ScrollView {
                 panelContent
+                    .frame(maxWidth: .infinity, alignment: .top)
             }
+            .scrollDisabled(!isAccountExpanded)
+            .scrollIndicators(.hidden)
+            .frame(maxHeight: isAccountExpanded ? MainPanelLayout.expandedContentMaxHeight : nil)
 
             StatusFooterView()
                 .layoutPriority(3)

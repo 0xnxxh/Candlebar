@@ -13,7 +13,7 @@ struct PixelCard<Content: View>: View {
             .background(PixelColors.raised)
             .overlay(
                 Rectangle()
-                    .stroke(PixelColors.line, lineWidth: 1),
+                    .strokeBorder(PixelColors.line, lineWidth: 1),
             )
     }
 }

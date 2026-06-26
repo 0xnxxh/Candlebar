@@ -66,7 +66,7 @@ struct SettingsWatchlistTab: View {
                         }
                     }
                 }
-                .scrollIndicators(store.preferences.watchlist.count > 6 ? .visible : .hidden)
+                .scrollIndicators(.hidden)
                 .frame(maxHeight: 220)
             }
         }
@@ -218,6 +218,7 @@ struct SettingsDiagnosticsTab: View {
                             .textSelection(.enabled)
                     }
                     .frame(minHeight: 160)
+                    .scrollIndicators(.hidden)
                 }
             }
         }
@@ -273,7 +274,7 @@ private struct SearchResultsView: View {
                     }
                 }
             }
-            .scrollIndicators(store.symbolSearchResults.count > 5 ? .visible : .hidden)
+            .scrollIndicators(.hidden)
             .frame(maxHeight: 180)
             .background(PixelColors.background)
             .overlay(Rectangle().stroke(PixelColors.line.opacity(0.6), lineWidth: 1))

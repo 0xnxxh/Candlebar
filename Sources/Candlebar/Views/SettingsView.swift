@@ -22,11 +22,12 @@ struct SettingsView: View {
                     selectedTabContent
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
-                .scrollIndicators(.visible)
+                .scrollIndicators(.hidden)
             }
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .padding(.top, 24)
         .frame(width: 620, height: 460)
         .background(PixelColors.background)
         .foregroundStyle(PixelColors.text)

@@ -36,6 +36,10 @@ final class SettingsWindowPresenter {
             defer: false,
         )
         window.title = LocalizedCopy.text(.settings, language: store.preferences.language)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
+        window.backgroundColor = .clear
         window.contentView = hostingView
         window.isReleasedWhenClosed = false
         window.center()
