@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
 @MainActor
@@ -6,8 +7,13 @@ final class SettingsWindowPresenter {
     static let shared = SettingsWindowPresenter()
 
     private var window: NSWindow?
+    private var updater: SPUUpdater?
 
     private init() {}
+
+    func configure(updater: SPUUpdater) {
+        self.updater = updater
+    }
 
     func open(store: AppStore) {
         if let window {
@@ -19,7 +25,10 @@ final class SettingsWindowPresenter {
             return
         }
 
-        let hostingView = NSHostingView(rootView: SettingsView().environmentObject(store))
+        let hostingView = NSHostingView(
+            rootView: SettingsView(updater: updater)
+                .environmentObject(store)
+        )
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 620, height: 460),
             styleMask: [.titled, .closable, .miniaturizable],

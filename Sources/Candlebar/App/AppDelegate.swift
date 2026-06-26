@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.menuBarLabelDidChange = { [weak self] text in
             self?.updateStatusLabel(text)
         }
+        SettingsWindowPresenter.shared.configure(updater: updaterController.updater)
         observePreferences()
         QAWindowPresenter.shared.showIfNeeded(store: store)
     }

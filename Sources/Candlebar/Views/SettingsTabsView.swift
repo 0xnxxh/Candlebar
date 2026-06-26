@@ -1,3 +1,4 @@
+import Sparkle
 import SwiftUI
 
 struct SettingsWatchlistTab: View {
@@ -182,6 +183,7 @@ struct SettingsAppearanceTab: View {
 
 struct SettingsDiagnosticsTab: View {
     @EnvironmentObject private var store: AppStore
+    var updater: SPUUpdater?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -195,10 +197,16 @@ struct SettingsDiagnosticsTab: View {
                 }
             }
 
-            Button(LocalizedCopy.text(.exportDiagnostics, language: store.preferences.language)) {
-                store.exportDiagnostics()
+            HStack {
+                if let updater {
+                    CheckForUpdatesView(updater: updater, language: store.preferences.language)
+                }
+
+                Button(LocalizedCopy.text(.exportDiagnostics, language: store.preferences.language)) {
+                    store.exportDiagnostics()
+                }
+                .buttonStyle(PixelButtonStyle())
             }
-            .buttonStyle(PixelButtonStyle())
 
             if let diagnosticExport = store.diagnosticExport {
                 PixelCard {

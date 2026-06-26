@@ -12,6 +12,7 @@ enum CopyKey {
     case apiKey
     case apiKeys
     case appearance
+    case checkForUpdates
     case compactMenuBar
     case current
     case defaultSymbol
@@ -119,6 +120,7 @@ enum LocalizedCopy {
         case .apiKey: "API key"
         case .apiKeys: "API KEYS"
         case .appearance: "APPEARANCE"
+        case .checkForUpdates: "CHECK FOR UPDATES"
         case .compactMenuBar: "COMPACT MENU BAR"
         case .current: "CURRENT"
         case .defaultSymbol: "Default symbol"
@@ -189,6 +191,7 @@ enum LocalizedCopy {
         case .apiKey: "API 密钥"
         case .apiKeys: "API 密钥"
         case .appearance: "外观"
+        case .checkForUpdates: "检查更新"
         case .compactMenuBar: "紧凑菜单栏"
         case .current: "当前列表"
         case .defaultSymbol: "默认交易对"

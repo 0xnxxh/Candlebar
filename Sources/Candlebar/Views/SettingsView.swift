@@ -1,7 +1,9 @@
+import Sparkle
 import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
+    var updater: SPUUpdater?
     @State private var selectedTab: SettingsTab = .watchlist
 
     var body: some View {
@@ -69,7 +71,7 @@ struct SettingsView: View {
         case .appearance:
             SettingsAppearanceTab()
         case .diagnostics:
-            SettingsDiagnosticsTab()
+            SettingsDiagnosticsTab(updater: updater)
         }
     }
 }
