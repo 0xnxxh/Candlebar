@@ -5,6 +5,8 @@ import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let outsideCloseStatusToggleSuppressionSeconds: TimeInterval = 1.5
+
     let store = AppStore()
     let updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -20,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var preferencesCancellable: AnyCancellable?
     private var outsideGlobalClickMonitor: Any?
     private var outsideLocalClickMonitor: Any?
+    private var isMainPanelPresented = false
+    private var suppressNextStatusOpenAfterOutsideClose = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -57,19 +61,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleMainPanel(_ sender: NSStatusBarButton) {
         guard let mainPanel else { return }
 
-        if mainPanel.isVisible {
-            mainPanel.orderOut(sender)
-            removeOutsideClickMonitors()
+        if isMainPanelPresented || mainPanel.isVisible {
+            hideMainPanel(sender)
+            return
+        }
+        guard !suppressNextStatusOpenAfterOutsideClose else {
+            suppressNextStatusOpenAfterOutsideClose = false
             return
         }
 
+        showMainPanel(from: sender)
+    }
+
+    private func showMainPanel(from sender: NSStatusBarButton) {
+        guard let mainPanel else { return }
         recordPanelAnchor(from: sender)
         currentPanelSize = MainPanelLayout.size(isExpanded: isMainPanelExpanded)
         panelTopY = preferredPanelTopY(from: sender)
         mainPanel.setContentSize(currentPanelSize)
         alignMainPanelWindow()
         mainPanel.orderFrontRegardless()
+        isMainPanelPresented = true
         updateOutsideClickMonitors()
+    }
+
+    private func hideMainPanel(_ sender: Any?) {
+        isMainPanelPresented = false
+        mainPanel?.orderOut(sender)
+        removeOutsideClickMonitors()
     }
 
     private func configureMainPanelIfNeeded() {
@@ -173,7 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         outsideGlobalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            Task { @MainActor in
+            DispatchQueue.main.async {
                 self?.closeMainPanelIfClickIsOutside(event)
             }
         }
@@ -193,19 +212,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let point = screenPoint(for: event)
-        if let statusButton = statusItem?.button, statusButtonFrame(statusButton).contains(point) {
-            return
-        }
         guard !mainPanel.frame.contains(point) else {
             return
         }
-        mainPanel.orderOut(event)
-        removeOutsideClickMonitors()
-    }
-
-    private func statusButtonFrame(_ button: NSStatusBarButton) -> NSRect {
-        guard let buttonWindow = button.window else { return .zero }
-        return buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        suppressNextStatusOpenAfterOutsideClose = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.outsideCloseStatusToggleSuppressionSeconds) { [weak self] in
+            self?.suppressNextStatusOpenAfterOutsideClose = false
+        }
+        hideMainPanel(event)
     }
 
     private func removeOutsideClickMonitors() {
