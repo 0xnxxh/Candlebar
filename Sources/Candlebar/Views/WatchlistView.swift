@@ -1,7 +1,7 @@
 import SwiftUI
 
 private enum WatchlistLayout {
-    static let rowHeight: CGFloat = 62
+    static let rowHeight: CGFloat = 70
     static let rowSpacing: CGFloat = 6
     static let maxVisibleRows = 5
 
@@ -60,17 +60,12 @@ struct TickerRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Text(isDefault ? ">" : " ")
-                    .font(PixelFont.section)
-                    .foregroundStyle(PixelColors.accent)
-                    .frame(width: 10)
-
                 if store.preferences.pixelTheme {
                     PixelGlyph(kind: glyphKind(for: ticker?.movement ?? .flat, fallback: ticker?.status))
                         .help(ticker?.status.rawValue.uppercased() ?? "IDLE")
                 }
 
-                HStack(alignment: .center, spacing: 10) {
+                HStack(alignment: .center, spacing: 8) {
                     Text(item.symbol)
                         .font(.system(size: 17, weight: .black, design: .monospaced))
                         .foregroundStyle(PixelColors.text)
@@ -89,26 +84,38 @@ struct TickerRow: View {
                             .frame(width: 58, alignment: .leading)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: store.preferences.pixelTheme ? 132 : 152, alignment: .leading)
 
-                Spacer()
+                IntradaySparklineView(
+                    series: store.intradaySeries[item.cacheKey],
+                    currentPrice: ticker?.lastPrice,
+                    tint: intradayColor(intradayPercent),
+                )
+                .frame(width: 60, height: 34)
+
+                Spacer(minLength: 0)
 
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(CandleFormat.price(ticker?.lastPrice, decimalPlaces: store.preferences.priceDecimalPlaces))
                         .font(PixelFont.number)
                         .foregroundStyle(PixelColors.text)
                         .lineLimit(1)
-                    Text(CandleFormat.percent(ticker?.priceChangePercent))
+                    Text(CandleFormat.percent(intradayPercent))
                         .font(PixelFont.tiny)
-                        .foregroundStyle((ticker?.isPositive ?? true) ? PixelColors.up : PixelColors.down)
+                        .foregroundStyle(intradayColor(intradayPercent))
                 }
-                .frame(width: 108, alignment: .trailing)
+                .frame(width: 88, alignment: .trailing)
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: WatchlistLayout.rowHeight)
             .background(isDefault ? PixelColors.raisedAlt : PixelColors.background)
             .pixelFlash(store.preferences.pixelTheme ? ticker?.movement ?? .flat : .flat)
-            .overlay(Rectangle().stroke(isDefault ? PixelColors.accent : PixelColors.line.opacity(0.75), lineWidth: 1))
+            .overlay(
+                Rectangle()
+                    .inset(by: 0.5)
+                    .strokeBorder(isDefault ? PixelColors.accent : PixelColors.line.opacity(0.75), lineWidth: 1),
+            )
         }
         .buttonStyle(.plain)
         .help("Set \(item.symbol) as menu bar symbol")
@@ -116,5 +123,9 @@ struct TickerRow: View {
 
     private var statusText: String {
         ticker?.message ?? CandleFormat.relativeTime(ticker?.updatedAt)
+    }
+
+    private var intradayPercent: Decimal? {
+        store.intradayPercent(for: item)
     }
 }

@@ -5,6 +5,7 @@ import OSLog
 final class AppStore: ObservableObject {
     @Published var preferences: AppPreferences
     @Published var tickers: [String: TickerSnapshot] = [:]
+    @Published var intradaySeries: [String: IntradaySeries] = [:]
     @Published var accountOverview: AccountOverview = .notConfigured
     @Published var apiKeyState: APIKeyState = .missing
     @Published var isRefreshing = false
@@ -24,6 +25,7 @@ final class AppStore: ObservableObject {
     private let preferencesStore: PreferencesStore
     private let accountSnapshotStore: AccountSnapshotStore
     private let tickerService: BinanceTickerService
+    private let klineService: BinanceKlineService
     private let symbolService: BinanceSymbolService
     private let accountService: BinanceAccountService
     private let keychainService: KeychainService
@@ -32,15 +34,18 @@ final class AppStore: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var accountRefreshTask: Task<Void, Never>?
     private var streamTask: Task<Void, Never>?
+    private var intradayTask: Task<Void, Never>?
     private var freshnessTask: Task<Void, Never>?
     private var symbolSearchTask: Task<Void, Never>?
     private static let tickerFallbackRefreshSeconds: Int64 = 10
+    private static let intradayRefreshSeconds: Int64 = 60
     private static let accountRefreshSeconds: Int64 = 30
 
     init(
         preferencesStore: PreferencesStore = PreferencesStore(),
         accountSnapshotStore: AccountSnapshotStore = AccountSnapshotStore(),
         tickerService: BinanceTickerService = BinanceTickerService(),
+        klineService: BinanceKlineService = BinanceKlineService(),
         symbolService: BinanceSymbolService = BinanceSymbolService(),
         accountService: BinanceAccountService = BinanceAccountService(),
         keychainService: KeychainService = KeychainService(),
@@ -48,6 +53,7 @@ final class AppStore: ObservableObject {
         self.preferencesStore = preferencesStore
         self.accountSnapshotStore = accountSnapshotStore
         self.tickerService = tickerService
+        self.klineService = klineService
         self.symbolService = symbolService
         self.accountService = accountService
         self.keychainService = keychainService
@@ -65,6 +71,7 @@ final class AppStore: ObservableObject {
         refreshTask?.cancel()
         accountRefreshTask?.cancel()
         streamTask?.cancel()
+        intradayTask?.cancel()
         freshnessTask?.cancel()
         symbolSearchTask?.cancel()
     }
@@ -79,6 +86,10 @@ final class AppStore: ObservableObject {
 
     var defaultTicker: TickerSnapshot? {
         tickers[defaultItem.cacheKey]
+    }
+
+    var defaultIntradaySeries: IntradaySeries? {
+        intradaySeries[defaultItem.cacheKey]
     }
 
     var menuBarLabelText: String {
@@ -106,11 +117,13 @@ final class AppStore: ObservableObject {
         }
         startAccountRefreshLoop()
         startTickerStream()
+        startIntradayRefreshLoop()
         startFreshnessClock()
     }
 
     func refreshAll() async {
         await refreshTickers()
+        await refreshIntradaySeries()
         await refreshAccount()
     }
 
@@ -159,6 +172,46 @@ final class AppStore: ObservableObject {
         }
     }
 
+    func intradayPercent(for item: WatchSymbol) -> Decimal? {
+        intradaySeries[item.cacheKey]?.percentChange(currentPrice: tickers[item.cacheKey]?.lastPrice)
+    }
+
+    func refreshIntradaySeries() async {
+        let items = preferences.watchlist
+        guard !items.isEmpty else {
+            intradaySeries = [:]
+            return
+        }
+        let activeKeys = Set(items.map(\.cacheKey))
+        intradaySeries = intradaySeries.filter { activeKeys.contains($0.key) }
+
+        for item in items {
+            intradaySeries[item.cacheKey] = intradaySeries[item.cacheKey] ?? .loading(for: item)
+        }
+
+        for item in items {
+            let result: (String, IntradaySeries)
+            do {
+                let series = try await klineService.fetchIntradaySeries(for: item)
+                result = (item.cacheKey, series)
+            } catch {
+                result = (
+                    item.cacheKey,
+                    IntradaySeries(
+                        symbol: item.symbol,
+                        market: item.market,
+                        dayStart: UTCTradingDay.start(of: Date()),
+                        candles: [],
+                        updatedAt: nil,
+                        status: .error,
+                        message: error.localizedDescription,
+                    )
+                )
+            }
+            intradaySeries[result.0] = mergeIntradayStaleAware(new: result.1, existing: intradaySeries[result.0])
+        }
+    }
+
     func refreshAccount() async {
         guard !Self.qaModeEnabled else {
             apiKeyState = .missing
@@ -198,7 +251,10 @@ final class AppStore: ObservableObject {
         }
         publishMenuBarLabel()
         startTickerStream()
-        Task { await refreshTickers() }
+        Task {
+            await refreshTickers()
+            await refreshIntradaySeries()
+        }
     }
 
     func addDraftSymbol() {
@@ -232,6 +288,7 @@ final class AppStore: ObservableObject {
         }
         publishMenuBarLabel()
         startTickerStream()
+        Task { await refreshIntradaySeries() }
     }
 
     func moveSymbols(from source: IndexSet, to destination: Int) {
@@ -411,6 +468,22 @@ final class AppStore: ObservableObject {
         }
     }
 
+    private func startIntradayRefreshLoop() {
+        intradayTask?.cancel()
+        intradayTask = Task { [weak self] in
+            guard let self else { return }
+            await refreshIntradaySeries()
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(Self.intradayRefreshSeconds))
+                } catch {
+                    return
+                }
+                await refreshIntradaySeries()
+            }
+        }
+    }
+
     private func startAccountRefreshLoop() {
         accountRefreshTask?.cancel()
         accountRefreshTask = Task { [weak self] in
@@ -445,6 +518,16 @@ final class AppStore: ObservableObject {
         copy.movement = PriceMovement(previous: existing?.lastPrice, current: new.lastPrice)
         guard new.status == .error, let existing, existing.lastPrice != nil else {
             return copy
+        }
+        var stale = existing
+        stale.status = .stale
+        stale.message = new.message
+        return stale
+    }
+
+    private func mergeIntradayStaleAware(new: IntradaySeries, existing: IntradaySeries?) -> IntradaySeries {
+        guard new.status == .error, let existing, !existing.candles.isEmpty else {
+            return new
         }
         var stale = existing
         stale.status = .stale

@@ -34,6 +34,17 @@ enum MarketType: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    var klineURL: URL {
+        switch self {
+        case .spot:
+            URL(string: "https://api.binance.com/api/v3/klines")!
+        case .usdMFutures:
+            URL(string: "https://fapi.binance.com/fapi/v1/klines")!
+        case .coinMFutures:
+            URL(string: "https://dapi.binance.com/dapi/v1/klines")!
+        }
+    }
+
     var exchangeInfoURL: URL {
         switch self {
         case .spot:

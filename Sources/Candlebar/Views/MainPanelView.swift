@@ -80,6 +80,8 @@ private struct HeaderView: View {
     var body: some View {
         let item = store.defaultItem
         let ticker = store.defaultTicker
+        let intraday = store.defaultIntradaySeries
+        let intradayPercent = store.intradayPercent(for: item)
 
         PixelCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -124,19 +126,30 @@ private struct HeaderView: View {
                     }
                 }
 
-                HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .center, spacing: 10) {
                     Text(CandleFormat.price(ticker?.lastPrice, decimalPlaces: store.preferences.priceDecimalPlaces))
                         .font(.system(size: 30, weight: .black, design: .monospaced))
                         .minimumScaleFactor(0.65)
                         .lineLimit(1)
                         .padding(.horizontal, 3)
                         .pixelFlash(store.preferences.pixelTheme ? ticker?.movement ?? .flat : .flat)
+                        .frame(maxWidth: 120, alignment: .leading)
 
                     Spacer()
 
-                    Text(CandleFormat.percent(ticker?.priceChangePercent))
+                    IntradayCandlestickView(
+                        series: intraday,
+                        currentPrice: ticker?.lastPrice,
+                        tint: intradayColor(intradayPercent),
+                    )
+                    .frame(width: 138, height: 72)
+
+                    Spacer()
+
+                    Text(CandleFormat.percent(intradayPercent))
                         .font(PixelFont.number)
-                        .foregroundStyle((ticker?.isPositive ?? true) ? PixelColors.up : PixelColors.down)
+                        .foregroundStyle(intradayColor(intradayPercent))
+                        .frame(width: 68, alignment: .trailing)
                 }
 
                 HStack {
@@ -156,6 +169,13 @@ private struct HeaderView: View {
             }
         }
     }
+}
+
+func intradayColor(_ percent: Decimal?) -> Color {
+    guard let percent else {
+        return PixelColors.muted
+    }
+    return percent >= 0 ? PixelColors.up : PixelColors.down
 }
 
 private func tickerFreshnessSegments(_ ticker: TickerSnapshot?) -> Int {

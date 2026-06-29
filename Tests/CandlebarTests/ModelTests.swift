@@ -86,6 +86,64 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(stale.message, "STALE 35S")
     }
 
+    func testUTCTradingDayUsesUTCStart() {
+        let date = Date(timeIntervalSince1970: 1_788_012_345)
+        let start = UTCTradingDay.start(of: date)
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = calendar.dateComponents([.hour, .minute, .second], from: start)
+        XCTAssertEqual(components.hour, 0)
+        XCTAssertEqual(components.minute, 0)
+        XCTAssertEqual(components.second, 0)
+    }
+
+    func testIntradaySeriesPercentUsesBaselineOpenAndCurrentPrice() {
+        let series = IntradaySeries(
+            symbol: "BTCUSDT",
+            market: .spot,
+            dayStart: Date(timeIntervalSince1970: 100),
+            candles: [
+                IntradayCandle(
+                    openTime: Date(timeIntervalSince1970: 100),
+                    open: 100,
+                    high: 102,
+                    low: 99,
+                    close: 101,
+                ),
+            ],
+            updatedAt: Date(timeIntervalSince1970: 110),
+            status: .live,
+            message: nil,
+        )
+
+        XCTAssertEqual(series.percentChange(currentPrice: 105), 5)
+        XCTAssertEqual(series.percentChange(currentPrice: nil), 1)
+    }
+
+    func testBinanceKlinePayloadDecodesArrayShape() throws {
+        let json = """
+        [
+          [
+            1788019200000,
+            "100.0",
+            "110.0",
+            "95.0",
+            "105.0",
+            "999",
+            1788020099999
+          ]
+        ]
+        """
+        let payloads = try JSONDecoder().decode([BinanceKlinePayload].self, from: Data(json.utf8))
+
+        XCTAssertEqual(payloads.first?.openTime, 1_788_019_200_000)
+        XCTAssertEqual(payloads.first?.open, "100.0")
+        XCTAssertEqual(payloads.first?.high, "110.0")
+        XCTAssertEqual(payloads.first?.low, "95.0")
+        XCTAssertEqual(payloads.first?.close, "105.0")
+    }
+
     func testPositionPnLRatioUsesAbsoluteNotional() {
         let long = FuturesPosition(
             market: .usdMFutures,
