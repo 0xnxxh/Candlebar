@@ -74,8 +74,30 @@ final class BinanceAccountService: @unchecked Sendable {
             let usdMLeverageBySymbol = Dictionary(
                 uniqueKeysWithValues: usdMSymbolConfigs.map { ($0.symbol, String($0.leverage)) },
             )
-            let positions = activePositions(usdMPositions, market: .usdMFutures, leverageBySymbol: usdMLeverageBySymbol)
-                + activePositions(coinMPositions, market: .coinMFutures)
+            let usdMIncomeBySymbol = await incomeTotalsBySymbol(
+                market: .usdMFutures,
+                symbols: activeSymbols(in: usdMPositions),
+                credentials: credentials,
+                timestamp: serverTime,
+                errors: &sourceErrors,
+            )
+            let coinMIncomeBySymbol = await incomeTotalsBySymbol(
+                market: .coinMFutures,
+                symbols: activeSymbols(in: coinMPositions),
+                credentials: credentials,
+                timestamp: serverTime,
+                errors: &sourceErrors,
+            )
+            let positions = activePositions(
+                usdMPositions,
+                market: .usdMFutures,
+                leverageBySymbol: usdMLeverageBySymbol,
+                incomeBySymbol: usdMIncomeBySymbol,
+            ) + activePositions(
+                coinMPositions,
+                market: .coinMFutures,
+                incomeBySymbol: coinMIncomeBySymbol,
+            )
             let spotValue = spotEstimatedValue(from: spotAccount)
             let usdMWalletBalance = decimal(usdMAccount?.totalWalletBalance)
             let usdEstimatedValue = usdEstimatedValue(spotValue: spotValue, usdMWalletBalance: usdMWalletBalance)
@@ -347,12 +369,14 @@ final class BinanceAccountService: @unchecked Sendable {
         _ payloads: [PositionRiskPayload],
         market: MarketType,
         leverageBySymbol: [String: String] = [:],
+        incomeBySymbol: [String: FuturesIncomeTotals] = [:],
     ) -> [FuturesPosition] {
         payloads.compactMap { payload in
             let quantity = decimal(payload.positionAmt) ?? 0
             guard quantity != 0 else {
                 return nil
             }
+            let income = incomeBySymbol[payload.symbol]
             return FuturesPosition(
                 market: market,
                 symbol: payload.symbol,
@@ -362,10 +386,78 @@ final class BinanceAccountService: @unchecked Sendable {
                 markPrice: decimal(payload.markPrice),
                 breakevenPrice: decimal(payload.breakEvenPrice),
                 unrealizedPnL: decimal(payload.unRealizedProfit),
+                realizedPnL: income?.realizedPnL,
+                fundingFee: income?.fundingFee,
+                notional: decimal(payload.notional) ?? decimal(payload.notionalValue),
+                positionInitialMargin: decimal(payload.positionInitialMargin),
                 liquidationPrice: decimal(payload.liquidationPrice),
                 leverage: payload.leverage ?? leverageBySymbol[payload.symbol],
             )
         }
+    }
+
+    private func incomeTotalsBySymbol(
+        market: MarketType,
+        symbols: Set<String>,
+        credentials: StoredAPIKey,
+        timestamp: Int64,
+        errors: inout [String],
+    ) async -> [String: FuturesIncomeTotals] {
+        guard !symbols.isEmpty else {
+            return [:]
+        }
+
+        let path: String
+        let label: String
+        switch market {
+        case .spot:
+            return [:]
+        case .usdMFutures:
+            path = "/fapi/v1/income"
+            label = "USD-M INCOME"
+        case .coinMFutures:
+            path = "/dapi/v1/income"
+            label = "COIN-M INCOME"
+        }
+
+        let payloads: [IncomeHistoryPayload]? = await optionalSignedRequest(
+            baseURL: market.accountBaseURL,
+            path: path,
+            queryItems: [
+                URLQueryItem(name: "limit", value: "1000"),
+            ],
+            credentials: credentials,
+            timestamp: timestamp,
+            label: label,
+            errors: &errors,
+        )
+
+        guard let payloads else {
+            return [:]
+        }
+
+        var totals = Dictionary(uniqueKeysWithValues: symbols.map { ($0, FuturesIncomeTotals()) })
+        payloads.forEach { payload in
+            guard symbols.contains(payload.symbol) else {
+                return
+            }
+            switch payload.incomeType {
+            case "REALIZED_PNL":
+                totals[payload.symbol, default: FuturesIncomeTotals()].realizedPnL += decimal(payload.income) ?? 0
+            case "FUNDING_FEE":
+                totals[payload.symbol, default: FuturesIncomeTotals()].fundingFee += decimal(payload.income) ?? 0
+            default:
+                return
+            }
+        }
+        return totals
+    }
+
+    private func activeSymbols(in payloads: [PositionRiskPayload]) -> Set<String> {
+        Set(payloads.compactMap { payload in
+            let quantity = decimal(payload.positionAmt) ?? 0
+            return quantity == 0 ? nil : payload.symbol
+        })
     }
 
     private func decimal(_ value: String?) -> Decimal? {
@@ -407,6 +499,9 @@ private struct PositionRiskPayload: Decodable {
     let breakEvenPrice: String?
     let markPrice: String?
     let unRealizedProfit: String?
+    let notional: String?
+    let notionalValue: String?
+    let positionInitialMargin: String?
     let liquidationPrice: String?
     let leverage: String?
     let positionSide: String?
@@ -415,6 +510,17 @@ private struct PositionRiskPayload: Decodable {
 private struct SymbolConfigPayload: Decodable {
     let symbol: String
     let leverage: Int
+}
+
+private struct IncomeHistoryPayload: Decodable {
+    let symbol: String
+    let incomeType: String
+    let income: String
+}
+
+private struct FuturesIncomeTotals {
+    var realizedPnL = Decimal(0)
+    var fundingFee = Decimal(0)
 }
 
 private struct DailyAccountBaseline {

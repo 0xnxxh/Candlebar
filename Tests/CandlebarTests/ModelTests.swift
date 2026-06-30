@@ -144,7 +144,7 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(payloads.first?.close, "105.0")
     }
 
-    func testPositionPnLRatioUsesAbsoluteNotional() {
+    func testPositionPnLRatioUsesInitialMarginROI() {
         let long = FuturesPosition(
             market: .usdMFutures,
             symbol: "BTCUSDT",
@@ -154,6 +154,10 @@ final class ModelTests: XCTestCase {
             markPrice: 110,
             breakevenPrice: nil,
             unrealizedPnL: 10,
+            realizedPnL: nil,
+            fundingFee: nil,
+            notional: 200,
+            positionInitialMargin: 40,
             liquidationPrice: nil,
             leverage: "5",
         )
@@ -166,12 +170,17 @@ final class ModelTests: XCTestCase {
             markPrice: 90,
             breakevenPrice: nil,
             unrealizedPnL: 10,
+            realizedPnL: nil,
+            fundingFee: nil,
+            notional: -200,
+            positionInitialMargin: 40,
             liquidationPrice: nil,
             leverage: "5",
         )
 
-        XCTAssertEqual(long.pnlRatio, 5)
-        XCTAssertEqual(short.pnlRatio, 5)
+        XCTAssertEqual(long.pnlRatio, 25)
+        XCTAssertEqual(short.pnlRatio, 25)
+        XCTAssertEqual(short.displayNotional, 200)
     }
 
     func testPositionDisplayLeverageAddsSuffix() {
@@ -184,6 +193,10 @@ final class ModelTests: XCTestCase {
             markPrice: 110,
             breakevenPrice: nil,
             unrealizedPnL: 10,
+            realizedPnL: nil,
+            fundingFee: nil,
+            notional: nil,
+            positionInitialMargin: nil,
             liquidationPrice: nil,
             leverage: "5",
         )
@@ -201,6 +214,10 @@ final class ModelTests: XCTestCase {
             markPrice: nil,
             breakevenPrice: nil,
             unrealizedPnL: nil,
+            realizedPnL: nil,
+            fundingFee: nil,
+            notional: nil,
+            positionInitialMargin: nil,
             liquidationPrice: nil,
             leverage: nil,
         )
@@ -213,12 +230,42 @@ final class ModelTests: XCTestCase {
             markPrice: nil,
             breakevenPrice: nil,
             unrealizedPnL: nil,
+            realizedPnL: nil,
+            fundingFee: nil,
+            notional: nil,
+            positionInitialMargin: nil,
             liquidationPrice: nil,
             leverage: nil,
         )
 
         XCTAssertTrue(long.isLong)
         XCTAssertFalse(short.isLong)
+    }
+
+    func testPositionCarriesRealizedPnLAndLocalizedLabel() {
+        let position = FuturesPosition(
+            market: .usdMFutures,
+            symbol: "BTCUSDT",
+            side: "LONG",
+            quantity: 1,
+            entryPrice: nil,
+            markPrice: nil,
+            breakevenPrice: nil,
+            unrealizedPnL: nil,
+            realizedPnL: 12.5,
+            fundingFee: -1.25,
+            notional: nil,
+            positionInitialMargin: nil,
+            liquidationPrice: nil,
+            leverage: nil,
+        )
+
+        XCTAssertEqual(position.realizedPnL, 12.5)
+        XCTAssertEqual(position.fundingFee, -1.25)
+        XCTAssertEqual(LocalizedCopy.text(.positionRealizedPnL, language: .english), "RPNL")
+        XCTAssertEqual(LocalizedCopy.text(.positionRealizedPnL, language: .chinese), "已实现盈亏")
+        XCTAssertEqual(LocalizedCopy.text(.positionFundingFee, language: .english), "FUNDING")
+        XCTAssertEqual(LocalizedCopy.text(.positionFundingFee, language: .chinese), "资金费")
     }
 
     func testAccountOverviewCarriesPartialSourceMessage() {

@@ -49,10 +49,13 @@ enum CopyKey {
     case watching
     case positionBreakeven
     case positionEntry
+    case positionFundingFee
     case positionLeverage
     case positionLiquidation
     case positionMark
+    case positionNotional
     case positionRatio
+    case positionRealizedPnL
     case positionSize
     case positionUnrealizedPnL
     case summaryCoinM
@@ -157,10 +160,13 @@ enum LocalizedCopy {
         case .watching: "WATCHING"
         case .positionBreakeven: "BE"
         case .positionEntry: "ENTRY"
+        case .positionFundingFee: "FUNDING"
         case .positionLeverage: "LEV"
         case .positionLiquidation: "LIQ"
         case .positionMark: "MARK"
+        case .positionNotional: "VALUE"
         case .positionRatio: "RATIO"
+        case .positionRealizedPnL: "RPNL"
         case .positionSize: "SIZE"
         case .positionUnrealizedPnL: "UPNL"
         case .summaryCoinM: "COIN-M"
@@ -228,10 +234,13 @@ enum LocalizedCopy {
         case .watching: "关注中"
         case .positionBreakeven: "两平"
         case .positionEntry: "开仓"
+        case .positionFundingFee: "资金费"
         case .positionLeverage: "杠杆"
         case .positionLiquidation: "强平"
         case .positionMark: "标记"
+        case .positionNotional: "面值"
         case .positionRatio: "盈亏比"
+        case .positionRealizedPnL: "已实现盈亏"
         case .positionSize: "仓位"
         case .positionUnrealizedPnL: "未实现盈亏"
         case .summaryCoinM: "币本位合约"

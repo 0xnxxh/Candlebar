@@ -216,7 +216,12 @@ private struct AccountDetailsView: View {
                 .foregroundStyle(PixelColors.muted)
             } else {
                 ForEach(overview.positions) { position in
-                    PositionRow(position: position, language: language, decimalPlaces: decimalPlaces)
+                    PositionRow(
+                        position: position,
+                        hideBalances: hideBalances,
+                        language: language,
+                        decimalPlaces: decimalPlaces,
+                    )
                 }
             }
         }
@@ -226,15 +231,17 @@ private struct AccountDetailsView: View {
 
 private struct PositionRow: View {
     var position: FuturesPosition
+    var hideBalances: Bool
     var language: AppLanguage
     var decimalPlaces: Int
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 HStack(spacing: 6) {
                     Text(position.symbol)
                         .foregroundStyle(PixelColors.text)
+                    PixelBadge(text: position.market.shortName, color: PixelColors.cyan)
                     Text(positionSideText)
                         .foregroundStyle(position.isLong ? PixelColors.up : PixelColors.down)
                 }
@@ -242,38 +249,41 @@ private struct PositionRow: View {
                 Text("\(LocalizedCopy.text(.positionLeverage, language: language)) \(position.displayLeverage)")
                     .foregroundStyle(PixelColors.warn)
             }
-            HStack {
-                Text("\(LocalizedCopy.text(.positionSize, language: language)) \(price(position.quantity))")
-                Spacer()
-                Text("\(LocalizedCopy.text(.positionUnrealizedPnL, language: language)) \(CandleFormat.signedMoney(position.unrealizedPnL))")
-                    .foregroundStyle((position.unrealizedPnL ?? 0) >= 0 ? PixelColors.up : PixelColors.down)
+
+            LazyVGrid(columns: fieldColumns, alignment: .leading, spacing: 5) {
+                ForEach(positionFields) { field in
+                    PositionFieldTile(
+                        title: field.title,
+                        value: field.value,
+                        color: field.color,
+                    )
+                }
             }
-            HStack {
-                Text("\(LocalizedCopy.text(.positionEntry, language: language)) \(price(position.entryPrice))")
-                Spacer()
-                Text("\(LocalizedCopy.text(.positionMark, language: language)) \(price(position.markPrice))")
-            }
-            HStack {
-                Text("\(LocalizedCopy.text(.positionBreakeven, language: language)) \(price(position.breakevenPrice))")
-                Spacer()
-                Text("\(LocalizedCopy.text(.positionLiquidation, language: language)) \(price(position.liquidationPrice))")
-            }
-            HStack {
-                Text(LocalizedCopy.text(.positionRatio, language: language))
-                Spacer()
-                Text(CandleFormat.percent(position.pnlRatio))
-            }
-            .foregroundStyle(PixelColors.muted)
-            .help("PnL ratio = unrealized PnL / absolute entry notional. It is not margin ROI.")
         }
         .font(PixelFont.tiny)
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
         .overlay(Rectangle().stroke(PixelColors.line, lineWidth: 1))
+        .help("Realized PnL and settled funding fees are summed from Binance futures income history for the active position symbol. PnL ratio = unrealized PnL / position initial margin.")
     }
 
     private func price(_ value: Decimal?) -> String {
+        hideBalances ? "****" : CandleFormat.price(value, decimalPlaces: decimalPlaces)
+    }
+
+    private func quantity(_ value: Decimal) -> String {
         CandleFormat.price(value, decimalPlaces: decimalPlaces)
+    }
+
+    private func money(_ value: Decimal?) -> String {
+        hideBalances ? "****" : CandleFormat.signedMoney(value)
+    }
+
+    private func signedColor(_ value: Decimal?) -> Color {
+        guard let value else {
+            return PixelColors.text
+        }
+        return value >= 0 ? PixelColors.up : PixelColors.down
     }
 
     private var positionSideText: String {
@@ -283,6 +293,98 @@ private struct PositionRow: View {
         case .chinese:
             position.isLong ? "多" : "空"
         }
+    }
+
+    private var fieldColumns: [GridItem] {
+        [
+            GridItem(.flexible(minimum: 0), spacing: 12, alignment: .leading),
+            GridItem(.flexible(minimum: 0), spacing: 0, alignment: .leading),
+        ]
+    }
+
+    private var positionFields: [PositionField] {
+        [
+            PositionField(
+                title: LocalizedCopy.text(.positionUnrealizedPnL, language: language),
+                value: money(position.unrealizedPnL),
+                color: signedColor(position.unrealizedPnL),
+            ),
+            PositionField(
+                title: LocalizedCopy.text(.positionRealizedPnL, language: language),
+                value: money(position.realizedPnL),
+                color: signedColor(position.realizedPnL),
+            ),
+            PositionField(
+                title: LocalizedCopy.text(.positionRatio, language: language),
+                value: CandleFormat.percent(position.pnlRatio),
+                color: signedColor(position.pnlRatio),
+            ),
+            PositionField(
+                title: LocalizedCopy.text(.positionFundingFee, language: language),
+                value: money(position.fundingFee),
+                color: signedColor(position.fundingFee),
+            ),
+            PositionField(
+                title: LocalizedCopy.text(.positionSize, language: language),
+                value: quantity(position.quantity),
+                color: PixelColors.text,
+            ),
+            PositionField(
+                title: LocalizedCopy.text(.positionNotional, language: language),
+                value: price(position.displayNotional),
+                color: PixelColors.text,
+            ),
+            PositionField(
+                title: LocalizedCopy.text(.positionEntry, language: language),
+                value: price(position.entryPrice),
+                color: PixelColors.text,
+            ),
+            PositionField(
+                title: LocalizedCopy.text(.positionMark, language: language),
+                value: price(position.markPrice),
+                color: PixelColors.text,
+            ),
+            PositionField(
+                title: LocalizedCopy.text(.positionBreakeven, language: language),
+                value: price(position.breakevenPrice),
+                color: PixelColors.text,
+            ),
+            PositionField(
+                title: LocalizedCopy.text(.positionLiquidation, language: language),
+                value: price(position.liquidationPrice),
+                color: PixelColors.text,
+            ),
+        ]
+    }
+}
+
+private struct PositionField: Identifiable {
+    var id: String { title }
+    var title: String
+    var value: String
+    var color: Color
+}
+
+private struct PositionFieldTile: View {
+    var title: String
+    var value: String
+    var color: Color
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(title)
+                .foregroundStyle(PixelColors.muted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Spacer(minLength: 4)
+            Text(value)
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .layoutPriority(1)
+        }
+        .frame(minHeight: 16, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

@@ -52,18 +52,24 @@ struct FuturesPosition: Identifiable, Equatable {
     var markPrice: Decimal?
     var breakevenPrice: Decimal?
     var unrealizedPnL: Decimal?
+    var realizedPnL: Decimal?
+    var fundingFee: Decimal?
+    var notional: Decimal?
+    var positionInitialMargin: Decimal?
     var liquidationPrice: Decimal?
     var leverage: String?
 
     var pnlRatio: Decimal? {
-        guard let unrealizedPnL, let entryPrice, entryPrice != 0, quantity != 0 else {
+        guard let unrealizedPnL,
+              let positionInitialMargin,
+              positionInitialMargin != 0 else {
             return nil
         }
-        let notional = entryPrice * quantity.magnitude
-        guard notional != 0 else {
-            return nil
-        }
-        return (unrealizedPnL / notional) * 100
+        return (unrealizedPnL / positionInitialMargin.magnitude) * 100
+    }
+
+    var displayNotional: Decimal? {
+        notional?.magnitude
     }
 
     var displayLeverage: String {
