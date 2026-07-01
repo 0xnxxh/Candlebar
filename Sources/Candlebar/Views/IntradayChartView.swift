@@ -160,7 +160,7 @@ struct IntradayChartData {
         }
 
         self.baseline = baseline
-        visibleCandleSlots = Self.visibleCandleSlots(adjustedCandles)
+        visibleCandleSlots = Self.visibleCandleSlots(adjustedCandles, dayStart: series?.dayStart)
         visibleCloseSlots = visibleCandleSlots.map { $0?.close }
         var closes = Self.sample(adjustedCandles.map(\.close), limit: Self.maxVisiblePoints)
         if closes.count == 1 {
@@ -201,13 +201,13 @@ struct IntradayChartData {
         }
     }
 
-    private static func visibleCandleSlots(_ candles: [IntradayCandle]) -> [IntradayCandle?] {
-        guard let lastOpenTime = candles.last?.openTime else {
+    private static func visibleCandleSlots(_ candles: [IntradayCandle], dayStart: Date?) -> [IntradayCandle?] {
+        guard let firstOpenTime = dayStart ?? candles.first?.openTime else {
             return []
         }
 
-        let lastSlot = slotIndex(for: lastOpenTime)
-        let firstSlot = max(0, lastSlot - visibleSlots + 1)
+        let firstSlot = slotIndex(for: firstOpenTime)
+        let lastSlot = firstSlot + visibleSlots - 1
         let candleBySlot = Dictionary(
             candles.map { (slotIndex(for: $0.openTime), $0) },
             uniquingKeysWith: { _, last in last },

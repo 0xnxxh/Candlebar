@@ -172,12 +172,12 @@ final class ModelTests: XCTestCase {
         )
 
         let chart = IntradayChartData(series: series, currentPrice: nil)
-        let tailSlots = Array(chart.visibleCandleSlots.suffix(3))
+        let leadSlots = Array(chart.visibleCandleSlots.prefix(3))
 
         XCTAssertEqual(chart.visibleCandleSlots.count, 42)
-        XCTAssertNotNil(tailSlots[0])
-        XCTAssertNil(tailSlots[1])
-        XCTAssertNotNil(tailSlots[2])
+        XCTAssertNotNil(leadSlots[0])
+        XCTAssertNil(leadSlots[1])
+        XCTAssertNotNil(leadSlots[2])
     }
 
     func testDailySnapshotQueryUsesCompletedBinanceDayWindow() {
