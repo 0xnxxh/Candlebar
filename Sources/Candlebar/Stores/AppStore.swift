@@ -5,7 +5,8 @@ import OSLog
 final class AppStore: ObservableObject {
     @Published var preferences: AppPreferences
     @Published var tickers: [String: TickerSnapshot] = [:]
-    @Published var intradaySeries: [String: IntradaySeries] = [:]
+    @Published var headerIntradaySeries: [String: IntradaySeries] = [:]
+    @Published var watchlistIntradaySeries: [String: IntradaySeries] = [:]
     @Published var accountOverview: AccountOverview = .notConfigured
     @Published var apiKeyState: APIKeyState = .missing
     @Published var isRefreshing = false
@@ -89,7 +90,7 @@ final class AppStore: ObservableObject {
     }
 
     var defaultIntradaySeries: IntradaySeries? {
-        intradaySeries[defaultItem.cacheKey]
+        headerIntradaySeries[defaultItem.cacheKey]
     }
 
     var menuBarLabelText: String {
@@ -172,27 +173,63 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func intradayPercent(for item: WatchSymbol) -> Decimal? {
-        intradaySeries[item.cacheKey]?.percentChange(currentPrice: tickers[item.cacheKey]?.lastPrice)
+    func headerIntradayPercent(for item: WatchSymbol) -> Decimal? {
+        headerIntradaySeries[item.cacheKey]?.percentChange(currentPrice: tickers[item.cacheKey]?.lastPrice)
+    }
+
+    func watchlistIntradayPercent(for item: WatchSymbol) -> Decimal? {
+        watchlistIntradaySeries[item.cacheKey]?.percentChange(currentPrice: tickers[item.cacheKey]?.lastPrice)
     }
 
     func refreshIntradaySeries() async {
+        await refreshHeaderIntradaySeries()
+        await refreshWatchlistIntradaySeries()
+    }
+
+    func refreshHeaderIntradaySeries() async {
+        let item = defaultItem
+        let interval = preferences.headerIntradayInterval
+        let activeKeys = Set([item.cacheKey])
+        headerIntradaySeries = headerIntradaySeries.filter { activeKeys.contains($0.key) }
+        await refreshIntradaySeries(
+            for: [item],
+            interval: interval,
+            into: \.headerIntradaySeries,
+            isCurrent: { $0.preferences.headerIntradayInterval == interval },
+        )
+    }
+
+    func refreshWatchlistIntradaySeries() async {
         let items = preferences.watchlist
+        let interval = preferences.watchlistIntradayInterval
         guard !items.isEmpty else {
-            intradaySeries = [:]
+            watchlistIntradaySeries = [:]
             return
         }
         let activeKeys = Set(items.map(\.cacheKey))
-        intradaySeries = intradaySeries.filter { activeKeys.contains($0.key) }
+        watchlistIntradaySeries = watchlistIntradaySeries.filter { activeKeys.contains($0.key) }
+        await refreshIntradaySeries(
+            for: items,
+            interval: interval,
+            into: \.watchlistIntradaySeries,
+            isCurrent: { $0.preferences.watchlistIntradayInterval == interval },
+        )
+    }
 
+    private func refreshIntradaySeries(
+        for items: [WatchSymbol],
+        interval: IntradayInterval,
+        into keyPath: ReferenceWritableKeyPath<AppStore, [String: IntradaySeries]>,
+        isCurrent: (AppStore) -> Bool,
+    ) async {
         for item in items {
-            intradaySeries[item.cacheKey] = intradaySeries[item.cacheKey] ?? .loading(for: item)
+            self[keyPath: keyPath][item.cacheKey] = self[keyPath: keyPath][item.cacheKey] ?? .loading(for: item, interval: interval)
         }
 
         for item in items {
             let result: (String, IntradaySeries)
             do {
-                let series = try await klineService.fetchIntradaySeries(for: item)
+                let series = try await klineService.fetchIntradaySeries(for: item, interval: interval)
                 result = (item.cacheKey, series)
             } catch {
                 result = (
@@ -200,6 +237,7 @@ final class AppStore: ObservableObject {
                     IntradaySeries(
                         symbol: item.symbol,
                         market: item.market,
+                        interval: interval,
                         dayStart: UTCTradingDay.start(of: Date()),
                         candles: [],
                         updatedAt: nil,
@@ -208,7 +246,10 @@ final class AppStore: ObservableObject {
                     )
                 )
             }
-            intradaySeries[result.0] = mergeIntradayStaleAware(new: result.1, existing: intradaySeries[result.0])
+            guard isCurrent(self) else {
+                return
+            }
+            self[keyPath: keyPath][result.0] = mergeIntradayStaleAware(new: result.1, existing: self[keyPath: keyPath][result.0])
         }
     }
 
@@ -231,6 +272,7 @@ final class AppStore: ObservableObject {
     func setDefault(_ item: WatchSymbol) {
         updatePreferences { $0.defaultSymbolID = item.id }
         publishMenuBarLabel()
+        Task { await refreshHeaderIntradaySeries() }
     }
 
     func addSymbol(_ symbol: String, market: MarketType) {
@@ -320,6 +362,28 @@ final class AppStore: ObservableObject {
     func updatePriceDecimalPlaces(_ value: Double) {
         updatePreferences { $0.priceDecimalPlaces = min(8, max(0, Int(value.rounded()))) }
         publishMenuBarLabel()
+    }
+
+    func updateHeaderIntradayInterval(_ value: IntradayInterval) {
+        guard preferences.headerIntradayInterval != value else {
+            return
+        }
+        updatePreferences { $0.headerIntradayInterval = value }
+        headerIntradaySeries = [:]
+        Task { await refreshHeaderIntradaySeries() }
+    }
+
+    func updateWatchlistIntradayInterval(_ value: IntradayInterval) {
+        guard preferences.watchlistIntradayInterval != value else {
+            return
+        }
+        updatePreferences { $0.watchlistIntradayInterval = value }
+        watchlistIntradaySeries = [:]
+        Task { await refreshWatchlistIntradaySeries() }
+    }
+
+    func updateHeaderChartDisplayMode(_ value: IntradayChartDisplayMode) {
+        updatePreferences { $0.headerChartDisplayMode = value }
     }
 
     func updateLanguage(_ value: AppLanguage) {
@@ -526,7 +590,10 @@ final class AppStore: ObservableObject {
     }
 
     private func mergeIntradayStaleAware(new: IntradaySeries, existing: IntradaySeries?) -> IntradaySeries {
-        guard new.status == .error, let existing, !existing.candles.isEmpty else {
+        guard new.status == .error,
+              let existing,
+              existing.interval == new.interval,
+              !existing.candles.isEmpty else {
             return new
         }
         var stale = existing

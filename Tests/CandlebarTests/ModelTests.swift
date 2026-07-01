@@ -41,7 +41,16 @@ final class ModelTests: XCTestCase {
 
         XCTAssertEqual(preferences.watchlist.first?.symbol, "BTCUSDT")
         XCTAssertFalse(preferences.hideLowValueAccounts)
+        XCTAssertEqual(preferences.headerIntradayInterval, .fifteenMinutes)
+        XCTAssertEqual(preferences.watchlistIntradayInterval, .fifteenMinutes)
+        XCTAssertEqual(preferences.headerChartDisplayMode, .fullDay)
         XCTAssertEqual(preferences.language, .english)
+    }
+
+    func testIntradayIntervalSlotsMatchFullTradingDay() {
+        XCTAssertEqual(IntradayInterval.fifteenMinutes.slotsPerDay, 96)
+        XCTAssertEqual(IntradayInterval.thirtyMinutes.slotsPerDay, 48)
+        XCTAssertEqual(IntradayInterval.oneHour.slotsPerDay, 24)
     }
 
     func testMenuBarLabelIncludesPriceOrExplicitMissingValue() {
@@ -159,14 +168,14 @@ final class ModelTests: XCTestCase {
                     close: 100,
                 ),
                 IntradayCandle(
-                    openTime: start.addingTimeInterval(IntradayCandle.interval * 2),
+                    openTime: start.addingTimeInterval(IntradayInterval.fifteenMinutes.seconds * 2),
                     open: 100,
                     high: 103,
                     low: 98,
                     close: 102,
                 ),
             ],
-            updatedAt: start.addingTimeInterval(IntradayCandle.interval * 2),
+            updatedAt: start.addingTimeInterval(IntradayInterval.fifteenMinutes.seconds * 2),
             status: .live,
             message: nil,
         )
@@ -174,10 +183,130 @@ final class ModelTests: XCTestCase {
         let chart = IntradayChartData(series: series, currentPrice: nil)
         let leadSlots = Array(chart.visibleCandleSlots.prefix(3))
 
-        XCTAssertEqual(chart.visibleCandleSlots.count, 42)
+        XCTAssertEqual(chart.visibleCandleSlots.count, 96)
         XCTAssertNotNil(leadSlots[0])
         XCTAssertNil(leadSlots[1])
         XCTAssertNotNil(leadSlots[2])
+    }
+
+    func testIntradayChartShowsFullDayCandleSlots() {
+        let start = Date(timeIntervalSince1970: 1_788_019_200)
+        let latestOpenTime = start.addingTimeInterval(IntradayInterval.fifteenMinutes.seconds * 50)
+        let series = IntradaySeries(
+            symbol: "BTCUSDT",
+            market: .spot,
+            dayStart: start,
+            candles: [
+                IntradayCandle(
+                    openTime: start,
+                    open: 100,
+                    high: 101,
+                    low: 99,
+                    close: 100,
+                ),
+                IntradayCandle(
+                    openTime: latestOpenTime,
+                    open: 100,
+                    high: 106,
+                    low: 98,
+                    close: 105,
+                ),
+            ],
+            updatedAt: latestOpenTime,
+            status: .live,
+            message: nil,
+        )
+
+        let chart = IntradayChartData(series: series, currentPrice: nil)
+
+        XCTAssertEqual(chart.visibleCandleSlots.count, 96)
+        XCTAssertEqual(chart.visibleCandleSlots.first??.openTime, start)
+        XCTAssertEqual(chart.visibleCandleSlots[50]?.openTime, latestOpenTime)
+    }
+
+    func testIntradayChartUsesSeriesIntervalSlots() {
+        let start = Date(timeIntervalSince1970: 1_788_019_200)
+        let laterOpenTime = start.addingTimeInterval(IntradayInterval.thirtyMinutes.seconds * 20)
+        let series = IntradaySeries(
+            symbol: "BTCUSDT",
+            market: .spot,
+            interval: .thirtyMinutes,
+            dayStart: start,
+            candles: [
+                IntradayCandle(
+                    openTime: start,
+                    open: 100,
+                    high: 101,
+                    low: 99,
+                    close: 100,
+                ),
+                IntradayCandle(
+                    openTime: laterOpenTime,
+                    open: 100,
+                    high: 106,
+                    low: 98,
+                    close: 105,
+                ),
+            ],
+            updatedAt: laterOpenTime,
+            status: .live,
+            message: nil,
+        )
+
+        let chart = IntradayChartData(series: series, currentPrice: nil)
+
+        XCTAssertEqual(chart.visibleCandleSlots.count, 48)
+        XCTAssertEqual(chart.visibleCandleSlots[20]?.openTime, laterOpenTime)
+    }
+
+    func testIntradayChartElapsedDayModeUsesOnlyElapsedSlots() {
+        let start = Date(timeIntervalSince1970: 1_788_019_200)
+        let latestOpenTime = start.addingTimeInterval(IntradayInterval.fifteenMinutes.seconds * 20)
+        let series = IntradaySeries(
+            symbol: "BTCUSDT",
+            market: .spot,
+            dayStart: start,
+            candles: [
+                IntradayCandle(
+                    openTime: start,
+                    open: 100,
+                    high: 101,
+                    low: 99,
+                    close: 100,
+                ),
+                IntradayCandle(
+                    openTime: latestOpenTime,
+                    open: 100,
+                    high: 106,
+                    low: 98,
+                    close: 105,
+                ),
+            ],
+            updatedAt: latestOpenTime,
+            status: .live,
+            message: nil,
+        )
+
+        let chart = IntradayChartData(series: series, currentPrice: nil, displayMode: .elapsedDay)
+
+        XCTAssertEqual(chart.visibleCandleSlots.count, 21)
+        XCTAssertEqual(chart.visibleCandleSlots.first??.openTime, start)
+        XCTAssertEqual(chart.visibleCandleSlots.last??.openTime, latestOpenTime)
+    }
+
+    func testBinanceKlineQueryUsesSelectedInterval() {
+        let item = WatchSymbol(symbol: "BTCUSDT", market: .spot)
+        let service = BinanceKlineService()
+        let now = Date(timeIntervalSince1970: 1_788_024_600)
+        let values = Dictionary(
+            uniqueKeysWithValues: service
+                .intradayQueryItems(for: item, interval: .oneHour, now: now)
+                .map { ($0.name, $0.value ?? "") },
+        )
+
+        XCTAssertEqual(values["symbol"], "BTCUSDT")
+        XCTAssertEqual(values["interval"], "1h")
+        XCTAssertEqual(values["limit"], "24")
     }
 
     func testDailySnapshotQueryUsesCompletedBinanceDayWindow() {

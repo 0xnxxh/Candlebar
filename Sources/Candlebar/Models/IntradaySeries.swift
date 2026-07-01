@@ -1,8 +1,6 @@
 import Foundation
 
 struct IntradayCandle: Codable, Equatable, Identifiable {
-    static let interval: TimeInterval = 15 * 60
-
     var openTime: Date
     var open: Decimal
     var high: Decimal
@@ -15,16 +13,42 @@ struct IntradayCandle: Codable, Equatable, Identifiable {
 struct IntradaySeries: Codable, Equatable {
     var symbol: String
     var market: MarketType
+    var interval: IntradayInterval
     var dayStart: Date
     var candles: [IntradayCandle]
     var updatedAt: Date?
     var status: FeedStatus
     var message: String?
 
-    static func loading(for item: WatchSymbol, dayStart: Date = UTCTradingDay.start(of: Date())) -> IntradaySeries {
+    init(
+        symbol: String,
+        market: MarketType,
+        interval: IntradayInterval = .fifteenMinutes,
+        dayStart: Date,
+        candles: [IntradayCandle],
+        updatedAt: Date?,
+        status: FeedStatus,
+        message: String?,
+    ) {
+        self.symbol = symbol
+        self.market = market
+        self.interval = interval
+        self.dayStart = dayStart
+        self.candles = candles
+        self.updatedAt = updatedAt
+        self.status = status
+        self.message = message
+    }
+
+    static func loading(
+        for item: WatchSymbol,
+        interval: IntradayInterval,
+        dayStart: Date = UTCTradingDay.start(of: Date()),
+    ) -> IntradaySeries {
         IntradaySeries(
             symbol: item.symbol,
             market: item.market,
+            interval: interval,
             dayStart: dayStart,
             candles: [],
             updatedAt: nil,

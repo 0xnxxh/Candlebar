@@ -3,11 +3,12 @@ import SwiftUI
 struct IntradayCandlestickView: View {
     var series: IntradaySeries?
     var currentPrice: Decimal?
+    var displayMode: IntradayChartDisplayMode
     var tint: Color
 
     var body: some View {
         Canvas { context, size in
-            let chart = IntradayChartData(series: series, currentPrice: currentPrice)
+            let chart = IntradayChartData(series: series, currentPrice: currentPrice, displayMode: displayMode)
             guard chart.hasValues else {
                 drawEmptyState(context: context, size: size)
                 return
@@ -42,7 +43,7 @@ struct IntradayCandlestickView: View {
             return
         }
         let slot = size.width / CGFloat(candleSlots.count)
-        let bodyWidth = max(2, min(5, slot * 0.58))
+        let bodyWidth = max(1, min(6, slot * 0.72))
 
         for index in candleSlots.indices {
             guard let candle = candleSlots[index] else {
@@ -137,7 +138,6 @@ struct IntradaySparklineView: View {
 }
 
 struct IntradayChartData {
-    private static let visibleSlots = 42
     private static let maxVisiblePoints = 48
     private static let verticalInset: CGFloat = 3
 
@@ -148,7 +148,11 @@ struct IntradayChartData {
     private let minValue: Decimal
     private let maxValue: Decimal
 
-    init(series: IntradaySeries?, currentPrice: Decimal?) {
+    init(
+        series: IntradaySeries?,
+        currentPrice: Decimal?,
+        displayMode: IntradayChartDisplayMode = .fullDay,
+    ) {
         let candles = series?.candles ?? []
         let baseline = series?.baselineOpen ?? currentPrice ?? 0
         var adjustedCandles = candles
@@ -160,7 +164,12 @@ struct IntradayChartData {
         }
 
         self.baseline = baseline
-        visibleCandleSlots = Self.visibleCandleSlots(adjustedCandles, dayStart: series?.dayStart)
+        visibleCandleSlots = Self.visibleCandleSlots(
+            adjustedCandles,
+            dayStart: series?.dayStart,
+            interval: series?.interval ?? .fifteenMinutes,
+            displayMode: displayMode,
+        )
         visibleCloseSlots = visibleCandleSlots.map { $0?.close }
         var closes = Self.sample(adjustedCandles.map(\.close), limit: Self.maxVisiblePoints)
         if closes.count == 1 {
@@ -201,23 +210,47 @@ struct IntradayChartData {
         }
     }
 
-    private static func visibleCandleSlots(_ candles: [IntradayCandle], dayStart: Date?) -> [IntradayCandle?] {
+    private static func visibleCandleSlots(
+        _ candles: [IntradayCandle],
+        dayStart: Date?,
+        interval: IntradayInterval,
+        displayMode: IntradayChartDisplayMode,
+    ) -> [IntradayCandle?] {
         guard let firstOpenTime = dayStart ?? candles.first?.openTime else {
             return []
         }
 
-        let firstSlot = slotIndex(for: firstOpenTime)
-        let lastSlot = firstSlot + visibleSlots - 1
+        let firstSlot = slotIndex(for: firstOpenTime, interval: interval)
+        let lastSlot = Self.lastVisibleSlot(
+            firstSlot: firstSlot,
+            candles: candles,
+            interval: interval,
+            displayMode: displayMode,
+        )
         let candleBySlot = Dictionary(
-            candles.map { (slotIndex(for: $0.openTime), $0) },
+            candles.map { (slotIndex(for: $0.openTime, interval: interval), $0) },
             uniquingKeysWith: { _, last in last },
         )
 
         return (firstSlot...lastSlot).map { candleBySlot[$0] }
     }
 
-    private static func slotIndex(for date: Date) -> Int {
-        Int(floor(date.timeIntervalSince1970 / IntradayCandle.interval))
+    private static func lastVisibleSlot(
+        firstSlot: Int,
+        candles: [IntradayCandle],
+        interval: IntradayInterval,
+        displayMode: IntradayChartDisplayMode,
+    ) -> Int {
+        let fullDayLastSlot = firstSlot + interval.slotsPerDay - 1
+        guard displayMode == .elapsedDay,
+              let latestCandleSlot = candles.map({ slotIndex(for: $0.openTime, interval: interval) }).max() else {
+            return fullDayLastSlot
+        }
+        return min(max(firstSlot, latestCandleSlot), fullDayLastSlot)
+    }
+
+    private static func slotIndex(for date: Date, interval: IntradayInterval) -> Int {
+        Int(floor(date.timeIntervalSince1970 / interval.seconds))
     }
 
     private func double(_ value: Decimal) -> Double {

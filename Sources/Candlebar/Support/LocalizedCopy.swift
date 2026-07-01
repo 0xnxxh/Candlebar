@@ -19,6 +19,8 @@ enum CopyKey {
     case deleteKey
     case diagnostics
     case exportDiagnostics
+    case headerKlineInterval
+    case headerKlineWidth
     case hideBalances
     case hideLowValueAccount
     case keyStored
@@ -46,6 +48,7 @@ enum CopyKey {
     case keyStatusMissing
     case watchlist
     case watchlistLimit
+    case watchlistSparkInterval
     case watching
     case positionBreakeven
     case positionEntry
@@ -130,6 +133,8 @@ enum LocalizedCopy {
         case .deleteKey: "DELETE KEY"
         case .diagnostics: "DIAGNOSTICS"
         case .exportDiagnostics: "EXPORT REDACTED DIAGNOSTICS"
+        case .headerKlineInterval: "TOP KLINE"
+        case .headerKlineWidth: "TOP WIDTH"
         case .hideBalances: "HIDE BALANCES"
         case .hideLowValueAccount: "HIDE LOW-VALUE ACCOUNT"
         case .keyStored: "KEY STORED"
@@ -157,6 +162,7 @@ enum LocalizedCopy {
         case .keyStatusMissing: "READ-ONLY KEY NEEDED"
         case .watchlist: "WATCHLIST"
         case .watchlistLimit: "WATCHLIST LIMIT"
+        case .watchlistSparkInterval: "LIST LINE"
         case .watching: "WATCHING"
         case .positionBreakeven: "BE"
         case .positionEntry: "ENTRY"
@@ -204,6 +210,8 @@ enum LocalizedCopy {
         case .deleteKey: "删除密钥"
         case .diagnostics: "诊断"
         case .exportDiagnostics: "导出脱敏诊断"
+        case .headerKlineInterval: "顶部 K 线"
+        case .headerKlineWidth: "顶部宽度"
         case .hideBalances: "隐藏金额"
         case .hideLowValueAccount: "隐藏低资产账户"
         case .keyStored: "密钥已保存"
@@ -231,6 +239,7 @@ enum LocalizedCopy {
         case .keyStatusMissing: "需要只读密钥"
         case .watchlist: "关注列表"
         case .watchlistLimit: "关注列表上限"
+        case .watchlistSparkInterval: "列表走势"
         case .watching: "关注中"
         case .positionBreakeven: "两平"
         case .positionEntry: "开仓"

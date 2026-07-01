@@ -81,7 +81,7 @@ private struct HeaderView: View {
         let item = store.defaultItem
         let ticker = store.defaultTicker
         let intraday = store.defaultIntradaySeries
-        let intradayPercent = store.intradayPercent(for: item)
+        let intradayPercent = store.headerIntradayPercent(for: item)
 
         PixelCard {
             VStack(alignment: .leading, spacing: 10) {
@@ -140,6 +140,7 @@ private struct HeaderView: View {
                     IntradayCandlestickView(
                         series: intraday,
                         currentPrice: ticker?.lastPrice,
+                        displayMode: store.preferences.headerChartDisplayMode,
                         tint: intradayColor(intradayPercent),
                     )
                     .frame(width: 138, height: 72)

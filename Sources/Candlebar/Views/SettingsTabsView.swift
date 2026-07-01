@@ -145,6 +145,9 @@ struct SettingsAppearanceTab: View {
                     ),
                 )
                 languageRow
+                headerIntradayIntervalRow
+                headerChartDisplayModeRow
+                watchlistIntradayIntervalRow
                 decimalsRow
             }
         }
@@ -159,6 +162,48 @@ struct SettingsAppearanceTab: View {
             PixelLanguageSelector(selection: Binding(
                 get: { store.preferences.language },
                 set: store.updateLanguage,
+            ))
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var headerIntradayIntervalRow: some View {
+        HStack {
+            Text(LocalizedCopy.text(.headerKlineInterval, language: store.preferences.language))
+                .font(PixelFont.section)
+                .foregroundStyle(PixelColors.muted)
+            Spacer()
+            PixelIntradayIntervalSelector(selection: Binding(
+                get: { store.preferences.headerIntradayInterval },
+                set: store.updateHeaderIntradayInterval,
+            ))
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var headerChartDisplayModeRow: some View {
+        HStack {
+            Text(LocalizedCopy.text(.headerKlineWidth, language: store.preferences.language))
+                .font(PixelFont.section)
+                .foregroundStyle(PixelColors.muted)
+            Spacer()
+            PixelChartDisplayModeSelector(selection: Binding(
+                get: { store.preferences.headerChartDisplayMode },
+                set: store.updateHeaderChartDisplayMode,
+            ))
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var watchlistIntradayIntervalRow: some View {
+        HStack {
+            Text(LocalizedCopy.text(.watchlistSparkInterval, language: store.preferences.language))
+                .font(PixelFont.section)
+                .foregroundStyle(PixelColors.muted)
+            Spacer()
+            PixelIntradayIntervalSelector(selection: Binding(
+                get: { store.preferences.watchlistIntradayInterval },
+                set: store.updateWatchlistIntradayInterval,
             ))
         }
         .padding(.vertical, 6)

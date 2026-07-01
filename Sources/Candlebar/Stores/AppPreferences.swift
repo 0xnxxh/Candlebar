@@ -9,6 +9,9 @@ struct AppPreferences: Codable, Equatable {
     var pinMainPanel: Bool
     var pixelTheme: Bool
     var priceDecimalPlaces: Int
+    var headerIntradayInterval: IntradayInterval
+    var watchlistIntradayInterval: IntradayInterval
+    var headerChartDisplayMode: IntradayChartDisplayMode
     var language: AppLanguage
 
     enum CodingKeys: String, CodingKey {
@@ -20,6 +23,10 @@ struct AppPreferences: Codable, Equatable {
         case pinMainPanel
         case pixelTheme
         case priceDecimalPlaces
+        case intradayInterval
+        case headerIntradayInterval
+        case watchlistIntradayInterval
+        case headerChartDisplayMode
         case language
     }
 
@@ -32,6 +39,9 @@ struct AppPreferences: Codable, Equatable {
         pinMainPanel: Bool,
         pixelTheme: Bool,
         priceDecimalPlaces: Int,
+        headerIntradayInterval: IntradayInterval,
+        watchlistIntradayInterval: IntradayInterval,
+        headerChartDisplayMode: IntradayChartDisplayMode,
         language: AppLanguage,
     ) {
         self.watchlist = watchlist
@@ -42,6 +52,9 @@ struct AppPreferences: Codable, Equatable {
         self.pinMainPanel = pinMainPanel
         self.pixelTheme = pixelTheme
         self.priceDecimalPlaces = priceDecimalPlaces
+        self.headerIntradayInterval = headerIntradayInterval
+        self.watchlistIntradayInterval = watchlistIntradayInterval
+        self.headerChartDisplayMode = headerChartDisplayMode
         self.language = language
     }
 
@@ -55,7 +68,27 @@ struct AppPreferences: Codable, Equatable {
         pinMainPanel = try container.decodeIfPresent(Bool.self, forKey: .pinMainPanel) ?? false
         pixelTheme = try container.decode(Bool.self, forKey: .pixelTheme)
         priceDecimalPlaces = try container.decode(Int.self, forKey: .priceDecimalPlaces)
+        let legacyInterval = try container.decodeIfPresent(IntradayInterval.self, forKey: .intradayInterval) ?? .fifteenMinutes
+        headerIntradayInterval = try container.decodeIfPresent(IntradayInterval.self, forKey: .headerIntradayInterval) ?? legacyInterval
+        watchlistIntradayInterval = try container.decodeIfPresent(IntradayInterval.self, forKey: .watchlistIntradayInterval) ?? legacyInterval
+        headerChartDisplayMode = try container.decodeIfPresent(IntradayChartDisplayMode.self, forKey: .headerChartDisplayMode) ?? .fullDay
         language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .english
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(watchlist, forKey: .watchlist)
+        try container.encodeIfPresent(defaultSymbolID, forKey: .defaultSymbolID)
+        try container.encode(compactMenuBar, forKey: .compactMenuBar)
+        try container.encode(hideBalances, forKey: .hideBalances)
+        try container.encode(hideLowValueAccounts, forKey: .hideLowValueAccounts)
+        try container.encode(pinMainPanel, forKey: .pinMainPanel)
+        try container.encode(pixelTheme, forKey: .pixelTheme)
+        try container.encode(priceDecimalPlaces, forKey: .priceDecimalPlaces)
+        try container.encode(headerIntradayInterval, forKey: .headerIntradayInterval)
+        try container.encode(watchlistIntradayInterval, forKey: .watchlistIntradayInterval)
+        try container.encode(headerChartDisplayMode, forKey: .headerChartDisplayMode)
+        try container.encode(language, forKey: .language)
     }
 
     static let defaults = AppPreferences(
@@ -71,6 +104,9 @@ struct AppPreferences: Codable, Equatable {
         pinMainPanel: false,
         pixelTheme: true,
         priceDecimalPlaces: 2,
+        headerIntradayInterval: .fifteenMinutes,
+        watchlistIntradayInterval: .fifteenMinutes,
+        headerChartDisplayMode: .fullDay,
         language: .english,
     )
 }

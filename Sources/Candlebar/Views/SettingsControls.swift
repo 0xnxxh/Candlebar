@@ -73,6 +73,52 @@ struct PixelLanguageSelector: View {
     }
 }
 
+struct PixelIntradayIntervalSelector: View {
+    @Binding var selection: IntradayInterval
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(IntradayInterval.allCases) { interval in
+                Button {
+                    selection = interval
+                } label: {
+                    Text(interval.title)
+                        .font(PixelFont.tiny)
+                        .foregroundStyle(selection == interval ? PixelColors.background : PixelColors.cyan)
+                        .frame(width: 46, height: 28)
+                        .background(selection == interval ? PixelColors.cyan : PixelColors.background)
+                        .overlay(Rectangle().stroke(selection == interval ? PixelColors.cyan : PixelColors.line, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(width: 138)
+    }
+}
+
+struct PixelChartDisplayModeSelector: View {
+    @Binding var selection: IntradayChartDisplayMode
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(IntradayChartDisplayMode.allCases) { mode in
+                Button {
+                    selection = mode
+                } label: {
+                    Text(mode.title)
+                        .font(PixelFont.tiny)
+                        .foregroundStyle(selection == mode ? PixelColors.background : PixelColors.cyan)
+                        .frame(width: 54, height: 28)
+                        .background(selection == mode ? PixelColors.cyan : PixelColors.background)
+                        .overlay(Rectangle().stroke(selection == mode ? PixelColors.cyan : PixelColors.line, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(width: 108)
+    }
+}
+
 struct PixelStepper: View {
     var value: Int
     var range: ClosedRange<Int>

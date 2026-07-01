@@ -87,7 +87,7 @@ struct TickerRow: View {
                 .frame(width: store.preferences.pixelTheme ? 132 : 152, alignment: .leading)
 
                 IntradaySparklineView(
-                    series: store.intradaySeries[item.cacheKey],
+                    series: store.watchlistIntradaySeries[item.cacheKey],
                     currentPrice: ticker?.lastPrice,
                     tint: intradayColor(intradayPercent),
                 )
@@ -126,6 +126,6 @@ struct TickerRow: View {
     }
 
     private var intradayPercent: Decimal? {
-        store.intradayPercent(for: item)
+        store.watchlistIntradayPercent(for: item)
     }
 }

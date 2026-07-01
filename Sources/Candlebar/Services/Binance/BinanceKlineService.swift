@@ -24,16 +24,14 @@ final class BinanceKlineService: @unchecked Sendable {
         self.session = session
     }
 
-    func fetchIntradaySeries(for item: WatchSymbol, now: Date = Date()) async throws -> IntradaySeries {
+    func fetchIntradaySeries(
+        for item: WatchSymbol,
+        interval: IntradayInterval,
+        now: Date = Date(),
+    ) async throws -> IntradaySeries {
         let dayStart = UTCTradingDay.start(of: now)
         var components = URLComponents(url: item.market.klineURL, resolvingAgainstBaseURL: false)
-        components?.queryItems = [
-            URLQueryItem(name: "symbol", value: item.symbol),
-            URLQueryItem(name: "interval", value: "15m"),
-            URLQueryItem(name: "startTime", value: "\(UTCTradingDay.millisecondsSince1970(for: dayStart))"),
-            URLQueryItem(name: "endTime", value: "\(UTCTradingDay.millisecondsSince1970(for: now))"),
-            URLQueryItem(name: "limit", value: "96"),
-        ]
+        components?.queryItems = intradayQueryItems(for: item, interval: interval, now: now)
         guard let url = components?.url else {
             throw BinanceServiceError.invalidResponse
         }
@@ -52,12 +50,24 @@ final class BinanceKlineService: @unchecked Sendable {
         return IntradaySeries(
             symbol: item.symbol,
             market: item.market,
+            interval: interval,
             dayStart: dayStart,
             candles: Self.normalizedCandles(from: payloads),
             updatedAt: now,
             status: .live,
             message: nil,
         )
+    }
+
+    func intradayQueryItems(for item: WatchSymbol, interval: IntradayInterval, now: Date) -> [URLQueryItem] {
+        let dayStart = UTCTradingDay.start(of: now)
+        return [
+            URLQueryItem(name: "symbol", value: item.symbol),
+            URLQueryItem(name: "interval", value: interval.rawValue),
+            URLQueryItem(name: "startTime", value: "\(UTCTradingDay.millisecondsSince1970(for: dayStart))"),
+            URLQueryItem(name: "endTime", value: "\(UTCTradingDay.millisecondsSince1970(for: now))"),
+            URLQueryItem(name: "limit", value: "\(interval.slotsPerDay)"),
+        ]
     }
 
     private static func normalizedCandles(from payloads: [BinanceKlinePayload]) -> [IntradayCandle] {
