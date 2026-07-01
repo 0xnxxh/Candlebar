@@ -37,15 +37,17 @@ struct IntradayCandlestickView: View {
     }
 
     private func drawCandles(context: GraphicsContext, size: CGSize, chart: IntradayChartData) {
-        let candles = chart.visibleCandles
-        guard !candles.isEmpty else {
+        let candleSlots = chart.visibleCandleSlots
+        guard !candleSlots.isEmpty else {
             return
         }
-        let slot = size.width / CGFloat(candles.count)
+        let slot = size.width / CGFloat(candleSlots.count)
         let bodyWidth = max(2, min(5, slot * 0.58))
 
-        for index in candles.indices {
-            let candle = candles[index]
+        for index in candleSlots.indices {
+            guard let candle = candleSlots[index] else {
+                continue
+            }
             let centerX = slot * CGFloat(index) + slot / 2
             guard let highY = chart.y(for: candle.high, in: size),
                   let lowY = chart.y(for: candle.low, in: size),
@@ -109,34 +111,39 @@ struct IntradaySparklineView: View {
     }
 
     private func drawSparkline(context: GraphicsContext, size: CGSize, chart: IntradayChartData) {
-        let closes = chart.visibleCloses
-        guard closes.count > 1 else {
+        let closeSlots = chart.visibleCloseSlots
+        guard closeSlots.compactMap({ $0 }).count > 1 else {
             return
         }
-        let step = size.width / CGFloat(closes.count - 1)
+        let step = size.width / CGFloat(max(1, closeSlots.count - 1))
         var path = Path()
-        for index in closes.indices {
-            guard let y = chart.y(for: closes[index], in: size) else {
+        var hasSegment = false
+        for index in closeSlots.indices {
+            guard let close = closeSlots[index],
+                  let y = chart.y(for: close, in: size) else {
+                hasSegment = false
                 continue
             }
             let point = CGPoint(x: CGFloat(index) * step, y: y)
-            if index == closes.startIndex {
-                path.move(to: point)
-            } else {
+            if hasSegment {
                 path.addLine(to: point)
+            } else {
+                path.move(to: point)
+                hasSegment = true
             }
         }
         context.stroke(path, with: .color(tint), lineWidth: 2)
     }
 }
 
-private struct IntradayChartData {
-    private static let maxVisibleCandles = 42
+struct IntradayChartData {
+    private static let visibleSlots = 42
     private static let maxVisiblePoints = 48
     private static let verticalInset: CGFloat = 3
 
     let baseline: Decimal
-    let visibleCandles: [IntradayCandle]
+    let visibleCandleSlots: [IntradayCandle?]
+    let visibleCloseSlots: [Decimal?]
     let visibleCloses: [Decimal]
     private let minValue: Decimal
     private let maxValue: Decimal
@@ -153,7 +160,8 @@ private struct IntradayChartData {
         }
 
         self.baseline = baseline
-        visibleCandles = Self.sample(adjustedCandles, limit: Self.maxVisibleCandles)
+        visibleCandleSlots = Self.visibleCandleSlots(adjustedCandles)
+        visibleCloseSlots = visibleCandleSlots.map { $0?.close }
         var closes = Self.sample(adjustedCandles.map(\.close), limit: Self.maxVisiblePoints)
         if closes.count == 1 {
             closes.append(closes[0])
@@ -167,7 +175,7 @@ private struct IntradayChartData {
     }
 
     var hasValues: Bool {
-        !visibleCandles.isEmpty || !visibleCloses.isEmpty
+        visibleCandleSlots.contains { $0 != nil } || !visibleCloses.isEmpty
     }
 
     func y(for value: Decimal, in size: CGSize) -> CGFloat? {
@@ -191,6 +199,25 @@ private struct IntradayChartData {
             let sourceIndex = Int((Double(index) / Double(limit - 1)) * Double(values.count - 1))
             return values[sourceIndex]
         }
+    }
+
+    private static func visibleCandleSlots(_ candles: [IntradayCandle]) -> [IntradayCandle?] {
+        guard let lastOpenTime = candles.last?.openTime else {
+            return []
+        }
+
+        let lastSlot = slotIndex(for: lastOpenTime)
+        let firstSlot = max(0, lastSlot - visibleSlots + 1)
+        let candleBySlot = Dictionary(
+            candles.map { (slotIndex(for: $0.openTime), $0) },
+            uniquingKeysWith: { _, last in last },
+        )
+
+        return (firstSlot...lastSlot).map { candleBySlot[$0] }
+    }
+
+    private static func slotIndex(for date: Date) -> Int {
+        Int(floor(date.timeIntervalSince1970 / IntradayCandle.interval))
     }
 
     private func double(_ value: Decimal) -> Double {

@@ -144,6 +144,54 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(payloads.first?.close, "105.0")
     }
 
+    func testIntradayChartKeepsGapForMissingCandleSlot() {
+        let start = Date(timeIntervalSince1970: 1_788_019_200)
+        let series = IntradaySeries(
+            symbol: "BTCUSDT",
+            market: .spot,
+            dayStart: start,
+            candles: [
+                IntradayCandle(
+                    openTime: start,
+                    open: 100,
+                    high: 101,
+                    low: 99,
+                    close: 100,
+                ),
+                IntradayCandle(
+                    openTime: start.addingTimeInterval(IntradayCandle.interval * 2),
+                    open: 100,
+                    high: 103,
+                    low: 98,
+                    close: 102,
+                ),
+            ],
+            updatedAt: start.addingTimeInterval(IntradayCandle.interval * 2),
+            status: .live,
+            message: nil,
+        )
+
+        let chart = IntradayChartData(series: series, currentPrice: nil)
+        let tailSlots = Array(chart.visibleCandleSlots.suffix(3))
+
+        XCTAssertEqual(chart.visibleCandleSlots.count, 42)
+        XCTAssertNotNil(tailSlots[0])
+        XCTAssertNil(tailSlots[1])
+        XCTAssertNotNil(tailSlots[2])
+    }
+
+    func testDailySnapshotQueryUsesCompletedBinanceDayWindow() {
+        let service = BinanceAccountService()
+        let now = Int64(1_782_892_601_000)
+        let items = service.dailySnapshotQueryItems(type: "SPOT", now: now)
+        let values = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+
+        XCTAssertEqual(values["type"], "SPOT")
+        XCTAssertEqual(values["startTime"], "1782259200000")
+        XCTAssertEqual(values["endTime"], "1782863999999")
+        XCTAssertEqual(values["limit"], "7")
+    }
+
     func testPositionPnLRatioUsesInitialMarginROI() {
         let long = FuturesPosition(
             market: .usdMFutures,

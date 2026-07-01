@@ -53,11 +53,21 @@ final class BinanceKlineService: @unchecked Sendable {
             symbol: item.symbol,
             market: item.market,
             dayStart: dayStart,
-            candles: payloads.compactMap(Self.candle(from:)),
+            candles: Self.normalizedCandles(from: payloads),
             updatedAt: now,
             status: .live,
             message: nil,
         )
+    }
+
+    private static func normalizedCandles(from payloads: [BinanceKlinePayload]) -> [IntradayCandle] {
+        let candles = payloads.compactMap(Self.candle(from:))
+        return Dictionary(
+            candles.map { ($0.openTime, $0) },
+            uniquingKeysWith: { _, last in last },
+        )
+        .values
+        .sorted { $0.openTime < $1.openTime }
     }
 
     private static func candle(from payload: BinanceKlinePayload) -> IntradayCandle? {
