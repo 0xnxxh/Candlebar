@@ -1,6 +1,8 @@
 import Foundation
 
 struct IntradayCandle: Codable, Equatable, Identifiable {
+    static let interval: TimeInterval = 15 * 60
+
     var openTime: Date
     var open: Decimal
     var high: Decimal

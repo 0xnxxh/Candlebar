@@ -7,6 +7,11 @@ struct StoredAPIKey: Equatable {
 }
 
 final class BinanceAccountService: @unchecked Sendable {
+    private static let stableAssets = Set(["USDT", "USDC", "FDUSD", "BUSD", "TUSD", "DAI"])
+    private static let dailySnapshotLookbackDays: Int64 = 7
+    private static let dailySnapshotLimit = 7
+    private static let millisecondsPerDay: Int64 = 24 * 60 * 60 * 1000
+
     private let session: URLSession
     private var dailyBaselineCache: DailyAccountBaseline?
 
@@ -69,7 +74,11 @@ final class BinanceAccountService: @unchecked Sendable {
                 label: "COIN-M POSITIONS",
                 errors: &sourceErrors,
             ) ?? []
-            let dailySnapshot = await cachedDailyAccountBaseline(credentials: credentials, now: serverTime)
+            let dailySnapshot = await cachedDailyAccountBaseline(
+                credentials: credentials,
+                now: serverTime,
+                errors: &sourceErrors,
+            )
 
             let usdMLeverageBySymbol = Dictionary(
                 uniqueKeysWithValues: usdMSymbolConfigs.map { ($0.symbol, String($0.leverage)) },
@@ -256,9 +265,8 @@ final class BinanceAccountService: @unchecked Sendable {
     }
 
     private func spotEstimatedValue(from payload: SpotAccountPayload) -> Decimal? {
-        let stableAssets = Set(["USDT", "USDC", "FDUSD", "BUSD", "TUSD", "DAI"])
         let total = payload.balances.reduce(Decimal(0)) { partial, balance in
-            guard stableAssets.contains(balance.asset) else {
+            guard Self.stableAssets.contains(balance.asset) else {
                 return partial
             }
             return partial + (decimal(balance.free) ?? 0) + (decimal(balance.locked) ?? 0)
@@ -290,28 +298,33 @@ final class BinanceAccountService: @unchecked Sendable {
     private func cachedDailyAccountBaseline(
         credentials: StoredAPIKey,
         now: Int64,
+        errors: inout [String],
     ) async -> DailyAccountBaseline? {
         let dayStart = utcDayStartMilliseconds(now)
         if let dailyBaselineCache, dailyBaselineCache.dayStart == dayStart {
             return dailyBaselineCache
         }
 
-        let spotSnapshot: DailyAccountSnapshotPayload? = try? await signedRequest(
+        let spotSnapshot: DailyAccountSnapshotPayload? = await optionalSignedRequest(
             baseURL: MarketType.spot.accountBaseURL,
             path: "/sapi/v1/accountSnapshot",
             queryItems: dailySnapshotQueryItems(type: "SPOT", now: now),
             credentials: credentials,
             timestamp: now,
+            label: "SPOT DAILY SNAPSHOT",
+            errors: &errors,
         )
-        let futuresSnapshot: DailyAccountSnapshotPayload? = try? await signedRequest(
+        let futuresSnapshot: DailyAccountSnapshotPayload? = await optionalSignedRequest(
             baseURL: MarketType.spot.accountBaseURL,
             path: "/sapi/v1/accountSnapshot",
             queryItems: dailySnapshotQueryItems(type: "FUTURES", now: now),
             credentials: credentials,
             timestamp: now,
+            label: "FUTURES DAILY SNAPSHOT",
+            errors: &errors,
         )
-        let spotValue = dailyAccountBaseline(spotSnapshot)?.usdEstimatedValue
-        let futuresValue = dailyAccountBaseline(futuresSnapshot)?.usdEstimatedValue
+        let spotValue = dailyAccountBaseline(spotSnapshot, before: dayStart)?.usdEstimatedValue
+        let futuresValue = dailyAccountBaseline(futuresSnapshot, before: dayStart)?.usdEstimatedValue
         guard spotValue != nil || futuresValue != nil else {
             return nil
         }
@@ -324,13 +337,15 @@ final class BinanceAccountService: @unchecked Sendable {
         return baseline
     }
 
-    private func dailySnapshotQueryItems(type: String, now: Int64) -> [URLQueryItem] {
+    func dailySnapshotQueryItems(type: String, now: Int64) -> [URLQueryItem] {
         let dayStart = utcDayStartMilliseconds(now)
+        let startTime = max(0, dayStart - Self.dailySnapshotLookbackDays * Self.millisecondsPerDay)
+        let endTime = max(0, dayStart - 1)
         return [
             URLQueryItem(name: "type", value: type),
-            URLQueryItem(name: "startTime", value: String(dayStart)),
-            URLQueryItem(name: "endTime", value: String(now)),
-            URLQueryItem(name: "limit", value: "7"),
+            URLQueryItem(name: "startTime", value: String(startTime)),
+            URLQueryItem(name: "endTime", value: String(endTime)),
+            URLQueryItem(name: "limit", value: String(Self.dailySnapshotLimit)),
         ]
     }
 
@@ -340,16 +355,19 @@ final class BinanceAccountService: @unchecked Sendable {
         return Int64(dayStart.timeIntervalSince1970 * 1000)
     }
 
-    private func dailyAccountBaseline(_ payload: DailyAccountSnapshotPayload?) -> DailyAccountBaseline? {
+    private func dailyAccountBaseline(
+        _ payload: DailyAccountSnapshotPayload?,
+        before dayStart: Int64,
+    ) -> DailyAccountBaseline? {
         guard payload?.code == 200,
               let snapshot = payload?.snapshotVos
-                .sorted(by: { $0.updateTime < $1.updateTime })
+                .filter({ $0.updateTime < dayStart })
+                .sorted(by: { $0.updateTime > $1.updateTime })
                 .first else {
             return nil
         }
         let spotStableValue = snapshot.data.balances?.reduce(Decimal(0)) { partial, balance in
-            let stableAssets = Set(["USDT", "USDC", "FDUSD", "BUSD", "TUSD", "DAI"])
-            guard stableAssets.contains(balance.asset) else {
+            guard Self.stableAssets.contains(balance.asset) else {
                 return partial
             }
             return partial + (decimal(balance.free) ?? 0) + (decimal(balance.locked) ?? 0)
