@@ -323,8 +323,157 @@ final class ModelTests: XCTestCase {
 
         XCTAssertEqual(values["type"], "SPOT")
         XCTAssertEqual(values["startTime"], "1782259200000")
-        XCTAssertEqual(values["endTime"], "1782863999999")
+        XCTAssertEqual(values["endTime"], "1782864000000")
         XCTAssertEqual(values["limit"], "7")
+    }
+
+    func testDailyAccountChangeUsesPreviousCompletedUTCDay() {
+        let service = BinanceAccountService()
+        let dayStart = Int64(1_782_864_000_000)
+        let spotSnapshot = DailyAccountSnapshotPayload(
+            code: 200,
+            snapshotVos: [
+                DailyAccountSnapshot(
+                    data: DailyAccountSnapshotData(
+                        balances: [DailySpotBalancePayload(asset: "USDT", free: "100", locked: "0")],
+                        assets: nil,
+                    ),
+                    updateTime: dayStart - 86_400_000,
+                ),
+                DailyAccountSnapshot(
+                    data: DailyAccountSnapshotData(
+                        balances: [DailySpotBalancePayload(asset: "USDT", free: "125", locked: "0")],
+                        assets: nil,
+                    ),
+                    updateTime: dayStart,
+                ),
+            ],
+        )
+        let futuresSnapshot = DailyAccountSnapshotPayload(
+            code: 200,
+            snapshotVos: [
+                DailyAccountSnapshot(
+                    data: DailyAccountSnapshotData(
+                        balances: nil,
+                        assets: [DailyFuturesAssetPayload(asset: "USDT", walletBalance: "200")],
+                    ),
+                    updateTime: dayStart - 86_400_000,
+                ),
+                DailyAccountSnapshot(
+                    data: DailyAccountSnapshotData(
+                        balances: nil,
+                        assets: [DailyFuturesAssetPayload(asset: "USDT", walletBalance: "225")],
+                    ),
+                    updateTime: dayStart,
+                ),
+            ],
+        )
+
+        let change = service.dailyAccountChange(
+            spotSnapshot: spotSnapshot,
+            futuresSnapshot: futuresSnapshot,
+            dayStart: dayStart,
+        )
+
+        XCTAssertEqual(change?.change, Decimal(50))
+        XCTAssertEqual(change?.percent, Decimal(string: "16.66666666666666666666666666666666666667"))
+    }
+
+    func testIncomeHistoryQueryItemsUseSymbolTypeAndWindow() {
+        let service = BinanceAccountService()
+        let items = service.incomeHistoryQueryItems(
+            symbol: "BTCUSDT",
+            incomeType: "REALIZED_PNL",
+            startTime: 1_775_116_601_000,
+            endTime: 1_782_892_601_000,
+        )
+        let values = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+
+        XCTAssertEqual(values["symbol"], "BTCUSDT")
+        XCTAssertEqual(values["incomeType"], "REALIZED_PNL")
+        XCTAssertEqual(values["startTime"], "1775116601000")
+        XCTAssertEqual(values["endTime"], "1782892601000")
+        XCTAssertEqual(values["limit"], "1000")
+    }
+
+    func testFuturesIncomeUsesNinetyDayNetRealizedPnLAndFundingOnly() async {
+        MockURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let service = BinanceAccountService(session: URLSession(configuration: configuration))
+
+        MockURLProtocol.handler = { request in
+            let url = try XCTUnwrap(request.url)
+            let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+            let query = Dictionary(uniqueKeysWithValues: components.queryItems?.map { ($0.name, $0.value ?? "") } ?? [])
+            MockURLProtocol.record(url: url, query: query)
+
+            let body: String
+            switch components.path {
+            case "/api/v3/time":
+                body = #"{"serverTime":1782892601000}"#
+            case "/api/v3/account":
+                body = #"{"balances":[]}"#
+            case "/fapi/v3/account":
+                body = #"{"totalWalletBalance":"100","totalUnrealizedProfit":"0"}"#
+            case "/fapi/v3/positionRisk":
+                body = """
+                [{
+                  "symbol": "BTCUSDT",
+                  "positionAmt": "1",
+                  "entryPrice": "100",
+                  "breakEvenPrice": "99",
+                  "markPrice": "110",
+                  "unRealizedProfit": "10",
+                  "notional": "110",
+                  "positionInitialMargin": "22",
+                  "liquidationPrice": "50",
+                  "leverage": "5",
+                  "positionSide": "LONG"
+                }]
+                """
+            case "/fapi/v1/symbolConfig":
+                body = #"[{"symbol":"BTCUSDT","leverage":5}]"#
+            case "/dapi/v1/account":
+                body = #"{"totalWalletBalance":"0","totalUnrealizedProfit":"0"}"#
+            case "/dapi/v1/positionRisk":
+                body = #"[]"#
+            case "/sapi/v1/accountSnapshot":
+                body = #"{"code":200,"snapshotVos":[]}"#
+            case "/fapi/v1/income":
+                XCTAssertEqual(query["symbol"], "BTCUSDT")
+                XCTAssertEqual(query["startTime"], "1775116601000")
+                XCTAssertEqual(query["endTime"], "1782892601000")
+                XCTAssertEqual(query["limit"], "1000")
+                switch query["incomeType"] {
+                case "REALIZED_PNL":
+                    body = #"[{"symbol":"BTCUSDT","incomeType":"REALIZED_PNL","income":"340.34","time":1782892600000}]"#
+                case "FUNDING_FEE":
+                    body = #"[{"symbol":"BTCUSDT","incomeType":"FUNDING_FEE","income":"-29.62","time":1782892600000}]"#
+                case "COMMISSION":
+                    body = #"[{"symbol":"BTCUSDT","incomeType":"COMMISSION","income":"-1.09","time":1782892600000}]"#
+                default:
+                    body = #"[]"#
+                }
+            default:
+                XCTFail("Unexpected request path: \(components.path)")
+                body = #"{}"#
+            }
+
+            let response = HTTPURLResponse(
+                url: url,
+                statusCode: 200,
+                httpVersion: nil,
+                headerFields: ["Content-Type": "application/json"],
+            )!
+            return (response, Data(body.utf8))
+        }
+
+        let overview = await service.validate(credentials: StoredAPIKey(apiKey: "key", secret: "secret"))
+
+        XCTAssertEqual(overview.positions.first?.realizedPnL, Decimal(string: "309.63"))
+        XCTAssertEqual(overview.positions.first?.fundingFee, Decimal(string: "-29.62"))
+        XCTAssertEqual(MockURLProtocol.recordedIncomeTypes, ["COMMISSION", "FUNDING_FEE", "REALIZED_PNL"])
     }
 
     func testPositionPnLRatioUsesInitialMarginROI() {
@@ -529,5 +678,83 @@ final class ModelTests: XCTestCase {
         history.record(AccountSnapshot(capturedAt: now.addingTimeInterval(-1 * 60 * 60), usdEstimatedValue: 110), now: now)
 
         XCTAssertEqual(history.baseline24h(now: now)?.usdEstimatedValue, 100)
+    }
+}
+
+private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
+    typealias Handler = @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
+
+    private static let state = MockURLProtocolState()
+
+    static var handler: Handler? {
+        get { state.handler }
+        set { state.handler = newValue }
+    }
+
+    static var recordedIncomeTypes: [String] {
+        state.recordedIncomeTypes
+    }
+
+    static func reset() {
+        state.reset()
+    }
+
+    static func record(url: URL, query: [String: String]) {
+        state.record(url: url, query: query)
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        do {
+            let handler = try XCTUnwrap(Self.handler)
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
+private final class MockURLProtocolState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requests: [(url: URL, query: [String: String])] = []
+    private var currentHandler: MockURLProtocol.Handler?
+
+    var handler: MockURLProtocol.Handler? {
+        get { lock.withLock { currentHandler } }
+        set { lock.withLock { currentHandler = newValue } }
+    }
+
+    var recordedIncomeTypes: [String] {
+        lock.withLock {
+            requests
+                .filter { $0.url.path == "/fapi/v1/income" }
+                .compactMap { $0.query["incomeType"] }
+                .sorted()
+        }
+    }
+
+    func reset() {
+        lock.withLock {
+            requests = []
+            currentHandler = nil
+        }
+    }
+
+    func record(url: URL, query: [String: String]) {
+        lock.withLock {
+            requests.append((url: url, query: query))
+        }
     }
 }

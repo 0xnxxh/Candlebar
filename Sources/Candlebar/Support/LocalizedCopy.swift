@@ -59,10 +59,13 @@ enum CopyKey {
     case positionNotional
     case positionRatio
     case positionRealizedPnL
+    case positionSummaryHelp
     case positionSize
     case positionUnrealizedPnL
     case summaryCoinM
+    case summaryPreviousDayUnavailable
     case summarySpot
+    case summaryTotalHelp
     case summaryTotal
     case summaryUsdM
     case defaultRow
@@ -173,10 +176,15 @@ enum LocalizedCopy {
         case .positionNotional: "VALUE"
         case .positionRatio: "RATIO"
         case .positionRealizedPnL: "RPNL"
+        case .positionSummaryHelp:
+            "Realized PnL is the 90-day sum of realized PnL, funding fees, and commissions from Binance futures income history. Funding shows funding fees only."
         case .positionSize: "SIZE"
         case .positionUnrealizedPnL: "UPNL"
         case .summaryCoinM: "COIN-M"
+        case .summaryPreviousDayUnavailable: "PREV DAY N/A"
         case .summarySpot: "Spot"
+        case .summaryTotalHelp:
+            "Total = spot stablecoin estimate plus USD-M wallet balance. Change shows the completed previous UTC day from yesterday 00:00 to today 00:00 when Binance daily account snapshots are available. COIN-M is not mixed into this USD estimate."
         case .summaryTotal: "Total"
         case .summaryUsdM: "USD-M"
         case .defaultRow: "DEFAULT"
@@ -250,10 +258,15 @@ enum LocalizedCopy {
         case .positionNotional: "面值"
         case .positionRatio: "盈亏比"
         case .positionRealizedPnL: "已实现盈亏"
+        case .positionSummaryHelp:
+            "已实现盈亏为最近 90 天 Binance 合约收入历史中的平仓盈亏、资金费和手续费合计。资金费仅显示资金费。"
         case .positionSize: "仓位"
         case .positionUnrealizedPnL: "未实现盈亏"
         case .summaryCoinM: "币本位合约"
+        case .summaryPreviousDayUnavailable: "昨日无基线"
         case .summarySpot: "现货"
+        case .summaryTotalHelp:
+            "总计为现货稳定币估值加 U 本位合约钱包余额。涨跌显示已完成的上一 UTC 日，即昨天 00:00 到今天 00:00；需要 Binance 每日账户快照可用。币本位不混入此 USD 估值。"
         case .summaryTotal: "总计"
         case .summaryUsdM: "U 本位合约"
         case .defaultRow: "默认"

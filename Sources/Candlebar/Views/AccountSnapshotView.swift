@@ -80,9 +80,9 @@ private struct AccountSummaryView: View {
                 title: LocalizedCopy.text(.summaryTotal, language: language),
                 value: overview.usdEstimatedValue,
                 change: overview.usdEstimatedChangeToday,
-                unavailableChangeText: missingTodayText,
+                unavailableChangeText: missingPreviousDayText,
                 shouldHideWhenLowValue: false,
-                help: "Total = spot stablecoin estimate plus USD-M wallet balance. Today change uses Binance daily account snapshot as the UTC+0 day baseline when available. COIN-M is not mixed into this USD estimate.",
+                help: LocalizedCopy.text(.summaryTotalHelp, language: language),
             ),
             AccountSummaryMetric(
                 title: LocalizedCopy.text(.summarySpot, language: language),
@@ -113,11 +113,8 @@ private struct AccountSummaryView: View {
         }
     }
 
-    private var missingTodayText: String {
-        switch language {
-        case .english: "DAY N/A"
-        case .chinese: "今日无基线"
-        }
+    private var missingPreviousDayText: String {
+        LocalizedCopy.text(.summaryPreviousDayUnavailable, language: language)
     }
 }
 
@@ -264,7 +261,7 @@ private struct PositionRow: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
         .overlay(Rectangle().stroke(PixelColors.line, lineWidth: 1))
-        .help("Realized PnL and settled funding fees are summed from Binance futures income history for the active position symbol. PnL ratio = unrealized PnL / position initial margin.")
+        .help(LocalizedCopy.text(.positionSummaryHelp, language: language))
     }
 
     private func price(_ value: Decimal?) -> String {
