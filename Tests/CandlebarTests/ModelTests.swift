@@ -66,12 +66,18 @@ final class ModelTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            MenuBarLabelFormatter.text(item: item, ticker: nil, compact: false, decimalPlaces: 2),
+            MenuBarLabelFormatter.text(item: item, ticker: nil, percentChange: nil, compact: false, decimalPlaces: 2),
             "BTC --",
         )
         XCTAssertEqual(
-            MenuBarLabelFormatter.text(item: item, ticker: ticker, compact: false, decimalPlaces: 2),
-            "BTC 123.45 +1.20%",
+            MenuBarLabelFormatter.text(
+                item: item,
+                ticker: ticker,
+                percentChange: Decimal(string: "5"),
+                compact: false,
+                decimalPlaces: 2,
+            ),
+            "BTC 123.45 +5.00%",
         )
     }
 

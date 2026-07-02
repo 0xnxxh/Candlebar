@@ -97,6 +97,7 @@ final class AppStore: ObservableObject {
         MenuBarLabelFormatter.text(
             item: defaultItem,
             ticker: defaultTicker,
+            percentChange: headerIntradayPercent(for: defaultItem),
             compact: preferences.compactMenuBar,
             decimalPlaces: preferences.priceDecimalPlaces,
         )
@@ -197,6 +198,7 @@ final class AppStore: ObservableObject {
             into: \.headerIntradaySeries,
             isCurrent: { $0.preferences.headerIntradayInterval == interval },
         )
+        publishMenuBarLabel()
     }
 
     func refreshWatchlistIntradaySeries() async {

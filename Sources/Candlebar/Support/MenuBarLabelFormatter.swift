@@ -4,6 +4,7 @@ enum MenuBarLabelFormatter {
     static func text(
         item: WatchSymbol,
         ticker: TickerSnapshot?,
+        percentChange: Decimal?,
         compact: Bool,
         decimalPlaces: Int,
     ) -> String {
@@ -21,6 +22,6 @@ enum MenuBarLabelFormatter {
         if compact {
             return "\(symbol) \(price)"
         }
-        return "\(symbol) \(price) \(CandleFormat.percent(ticker?.priceChangePercent))"
+        return "\(symbol) \(price) \(CandleFormat.percent(percentChange))"
     }
 }

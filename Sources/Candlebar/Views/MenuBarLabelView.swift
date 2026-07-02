@@ -11,11 +11,6 @@ struct MenuBarLabelView: View {
     }
 
     private var labelText: String {
-        MenuBarLabelFormatter.text(
-            item: store.defaultItem,
-            ticker: store.defaultTicker,
-            compact: store.preferences.compactMenuBar,
-            decimalPlaces: store.preferences.priceDecimalPlaces,
-        )
+        store.menuBarLabelText
     }
 }
