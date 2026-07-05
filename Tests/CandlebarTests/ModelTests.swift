@@ -81,6 +81,20 @@ final class ModelTests: XCTestCase {
         )
     }
 
+    func testMainPanelAlignmentClampsToTargetDisplayVisibleFrame() {
+        let secondaryVisibleFrame = NSRect(x: 1440, y: 0, width: 1440, height: 900)
+        let frame = MainPanelLayout.alignedFrame(
+            currentFrame: NSRect(x: 0, y: 0, width: 400, height: 590),
+            anchorX: 1500,
+            topY: 880,
+            visibleFrame: secondaryVisibleFrame,
+        )
+
+        XCTAssertEqual(frame.origin.x, secondaryVisibleFrame.minX + MainPanelLayout.screenEdgeInset)
+        XCTAssertGreaterThanOrEqual(frame.minX, secondaryVisibleFrame.minX)
+        XCTAssertLessThanOrEqual(frame.maxX, secondaryVisibleFrame.maxX)
+    }
+
     func testTickerFreshness() {
         let ticker = TickerSnapshot(
             symbol: "BTCUSDT",

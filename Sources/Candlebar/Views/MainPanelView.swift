@@ -22,6 +22,33 @@ enum MainPanelLayout {
             height: min(height, NSScreen.main?.visibleFrame.height ?? height),
         )
     }
+
+    static func alignedFrame(
+        currentFrame: NSRect,
+        anchorX: CGFloat,
+        topY: CGFloat,
+        visibleFrame: NSRect?,
+    ) -> NSRect {
+        var frame = currentFrame
+        frame.origin.x = anchorX - frame.width / 2
+        frame.origin.y = topY - frame.height
+
+        if let visibleFrame {
+            let inset = screenEdgeInset
+            frame.origin.x = min(
+                max(frame.origin.x, visibleFrame.minX + inset),
+                visibleFrame.maxX - inset - frame.width,
+            )
+            frame.origin.y = min(
+                max(frame.origin.y, visibleFrame.minY + inset),
+                visibleFrame.maxY - inset - frame.height,
+            )
+        }
+
+        frame.origin.x = frame.origin.x.rounded()
+        frame.origin.y = frame.origin.y.rounded()
+        return frame
+    }
 }
 
 struct MainPanelView: View {

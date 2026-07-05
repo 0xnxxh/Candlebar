@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isMainPanelExpanded = false
     private var panelAnchorX: CGFloat?
     private var panelTopY: CGFloat?
+    private var panelVisibleFrame: NSRect?
     private var preferencesCancellable: AnyCancellable?
     private var outsideGlobalClickMonitor: Any?
     private var outsideLocalClickMonitor: Any?
@@ -134,6 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let buttonWindow = button.window else { return }
         let screenFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
         panelAnchorX = screenFrame.midX
+        panelVisibleFrame = buttonWindow.screen?.visibleFrame
     }
 
     private func preferredPanelTopY(from button: NSStatusBarButton) -> CGFloat? {
@@ -154,25 +156,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let topY = panelTopY
         else { return }
 
-        let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
-        var frame = window.frame
-        frame.origin.x = anchorX - frame.width / 2
-        frame.origin.y = topY - frame.height
-
-        if let visibleFrame {
-            let inset = MainPanelLayout.screenEdgeInset
-            frame.origin.x = min(
-                max(frame.origin.x, visibleFrame.minX + inset),
-                visibleFrame.maxX - inset - frame.width,
-            )
-            frame.origin.y = min(
-                max(frame.origin.y, visibleFrame.minY + inset),
-                visibleFrame.maxY - inset - frame.height,
-            )
-        }
-
-        frame.origin.x = frame.origin.x.rounded()
-        frame.origin.y = frame.origin.y.rounded()
+        let frame = MainPanelLayout.alignedFrame(
+            currentFrame: window.frame,
+            anchorX: anchorX,
+            topY: topY,
+            visibleFrame: panelVisibleFrame ?? window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame,
+        )
         window.setFrame(frame, display: true, animate: false)
     }
 
