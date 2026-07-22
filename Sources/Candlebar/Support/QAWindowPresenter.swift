@@ -10,7 +10,7 @@ final class QAWindowPresenter {
     private init() {}
 
     func showIfNeeded(store: AppStore) {
-        guard ProcessInfo.processInfo.environment["CANDLEBAR_QA_WINDOW"] == "1" else {
+        guard AppStore.qaModeEnabled else {
             return
         }
         if let window {

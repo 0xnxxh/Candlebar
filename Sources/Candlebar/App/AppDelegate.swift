@@ -257,7 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openSettingsFromMenu() {
-        SettingsOpener.open(store: store)
+        SettingsWindowPresenter.shared.open(store: store)
     }
 
     @objc private func checkForUpdatesFromMenu() {

@@ -8,6 +8,11 @@ struct APIKeyState: Equatable {
         hasKey: false,
         statusText: "READ-ONLY KEY NEEDED",
     )
+
+    static let error = APIKeyState(
+        hasKey: false,
+        statusText: "KEYCHAIN ERROR",
+    )
 }
 
 struct AccountOverview: Equatable {
@@ -40,6 +45,24 @@ struct AccountOverview: Equatable {
         updatedAt: nil,
         message: nil,
     )
+
+    static func keychainError(_ message: String) -> AccountOverview {
+        AccountOverview(
+            status: .error,
+            statusText: "ACCOUNT CHECK FAILED",
+            usdEstimatedValue: nil,
+            usdEstimatedChangeToday: nil,
+            usdEstimatedChangePercentToday: nil,
+            spotEstimatedValue: nil,
+            usdMWalletBalance: nil,
+            usdMUnrealizedPnL: nil,
+            coinMWalletBalance: nil,
+            coinMUnrealizedPnL: nil,
+            positions: [],
+            updatedAt: Date(),
+            message: message,
+        )
+    }
 }
 
 struct FuturesPosition: Identifiable, Equatable {

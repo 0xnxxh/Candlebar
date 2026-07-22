@@ -3,7 +3,6 @@ import SwiftUI
 
 enum MainPanelLayout {
     static let width: CGFloat = 400
-    static let expandedFallbackScrollHeight: CGFloat = 520
     static let menuBarGap: CGFloat = 6
     static let screenEdgeInset: CGFloat = 8
     private static let nonScrollableExpandedHeight: CGFloat = 80
@@ -230,7 +229,7 @@ private struct StatusFooterView: View {
             Spacer()
 
             Button {
-                SettingsOpener.open(store: store)
+                SettingsWindowPresenter.shared.open(store: store)
             } label: {
                 Label(LocalizedCopy.text(.settings, language: store.preferences.language), systemImage: "gearshape")
                     .labelStyle(.titleAndIcon)

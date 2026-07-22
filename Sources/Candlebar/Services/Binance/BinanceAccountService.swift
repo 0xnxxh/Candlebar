@@ -258,9 +258,7 @@ final class BinanceAccountService: @unchecked Sendable {
             "RATE LIMITED"
         case .decodingFailed:
             "DATA FORMAT CHANGED"
-        case .missingCredentials:
-            "READ-ONLY KEY NEEDED"
-        case .invalidResponse, .signingUnavailable, .httpStatus:
+        case .invalidResponse, .httpStatus:
             "ACCOUNT CHECK FAILED"
         }
     }
@@ -335,9 +333,8 @@ final class BinanceAccountService: @unchecked Sendable {
     }
 
     private func utcDayStartMilliseconds(_ now: Int64) -> Int64 {
-        let seconds = TimeInterval(now) / 1000
-        let dayStart = Calendar.utc.startOfDay(for: Date(timeIntervalSince1970: seconds))
-        return Int64(dayStart.timeIntervalSince1970 * 1000)
+        let date = Date(timeIntervalSince1970: TimeInterval(now) / 1000)
+        return UTCTradingDay.millisecondsSince1970(for: UTCTradingDay.start(of: date))
     }
 
     func dailyAccountChange(
@@ -401,7 +398,6 @@ final class BinanceAccountService: @unchecked Sendable {
             return nil
         }
         return DailyAccountValue(
-            dayStart: utcDayStartMilliseconds(snapshot.updateTime),
             usdEstimatedValue: (spotStableValue ?? 0) + (usdMWalletBalance ?? 0),
         )
     }
@@ -618,7 +614,6 @@ struct DailyAccountChange {
 }
 
 private struct DailyAccountValue {
-    let dayStart: Int64
     let usdEstimatedValue: Decimal
 }
 
@@ -646,12 +641,4 @@ struct DailySpotBalancePayload: Decodable {
 struct DailyFuturesAssetPayload: Decodable {
     let asset: String
     let walletBalance: String
-}
-
-private extension Calendar {
-    static var utc: Calendar {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        return calendar
-    }
 }

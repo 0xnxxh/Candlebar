@@ -24,6 +24,7 @@ enum CopyKey {
     case hideBalances
     case hideLowValueAccount
     case keyStored
+    case keychainError
     case language
     case noKeyCopy
     case noKeyRiskCopy
@@ -94,6 +95,8 @@ enum LocalizedCopy {
             text(.keyStored, language: language)
         case "READ-ONLY KEY NEEDED":
             text(.keyStatusMissing, language: language)
+        case "KEYCHAIN ERROR":
+            text(.keychainError, language: language)
         default:
             statusText
         }
@@ -141,6 +144,7 @@ enum LocalizedCopy {
         case .hideBalances: "HIDE BALANCES"
         case .hideLowValueAccount: "HIDE LOW-VALUE ACCOUNT"
         case .keyStored: "KEY STORED"
+        case .keychainError: "KEYCHAIN ERROR"
         case .language: "LANGUAGE"
         case .noKeyCopy: "Add a Binance key with read permission only."
         case .noKeyRiskCopy: "Trading, withdrawal, transfer and key creation are never used."
@@ -223,6 +227,7 @@ enum LocalizedCopy {
         case .hideBalances: "隐藏金额"
         case .hideLowValueAccount: "隐藏低资产账户"
         case .keyStored: "密钥已保存"
+        case .keychainError: "钥匙串错误"
         case .language: "语言"
         case .noKeyCopy: "添加只读权限的 Binance API key。"
         case .noKeyRiskCopy: "不会使用交易、提现、划转或创建密钥权限。"

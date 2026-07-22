@@ -5,18 +5,18 @@ final class KeychainService {
     private let service = "com.hoon.Candlebar"
     private let account = "binance"
 
-    func loadCredentials() -> StoredAPIKey? {
-        guard let data = read(account: account),
-              let payload = try? JSONDecoder().decode(KeychainPayload.self, from: data) else {
+    func loadCredentials() throws -> StoredAPIKey? {
+        guard let data = try read(account: account) else {
             return nil
         }
+        let payload = try JSONDecoder().decode(KeychainPayload.self, from: data)
         return StoredAPIKey(apiKey: payload.apiKey, secret: payload.secret)
     }
 
     func save(credentials: StoredAPIKey) throws {
         let payload = KeychainPayload(apiKey: credentials.apiKey, secret: credentials.secret)
         let data = try JSONEncoder().encode(payload)
-        delete()
+        try delete()
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -32,16 +32,16 @@ final class KeychainService {
         }
     }
 
-    func delete() {
+    func delete() throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
         ]
-        SecItemDelete(query as CFDictionary)
+        try Self.validateDeleteStatus(SecItemDelete(query as CFDictionary))
     }
 
-    private func read(account: String) -> Data? {
+    private func read(account: String) throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -52,18 +52,37 @@ final class KeychainService {
 
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess else {
+        return try Self.data(item: item, status: status)
+    }
+
+    static func data(item: CFTypeRef?, status: OSStatus) throws -> Data? {
+        guard status != errSecItemNotFound else {
             return nil
         }
-        return item as? Data
+        guard status == errSecSuccess else {
+            throw KeychainError.unhandled(status)
+        }
+        guard let data = item as? Data else {
+            throw KeychainError.invalidData
+        }
+        return data
+    }
+
+    static func validateDeleteStatus(_ status: OSStatus) throws {
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.unhandled(status)
+        }
     }
 }
 
 enum KeychainError: Error, LocalizedError {
+    case invalidData
     case unhandled(OSStatus)
 
     var errorDescription: String? {
         switch self {
+        case .invalidData:
+            "Invalid Keychain data"
         case .unhandled(let status):
             "Keychain error \(status)"
         }

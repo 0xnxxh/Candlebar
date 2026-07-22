@@ -4,7 +4,6 @@ struct BinanceTickerPayload: Decodable {
     let symbol: String
     let lastPrice: String
     let priceChangePercent: String
-    let closeTime: Int?
 }
 
 struct BinanceStreamEnvelope: Decodable {
@@ -12,13 +11,11 @@ struct BinanceStreamEnvelope: Decodable {
 }
 
 struct BinanceMiniTickerPayload: Decodable {
-    let eventType: String?
     let symbol: String
     let closePrice: String
     let openPrice: String
 
     enum CodingKeys: String, CodingKey {
-        case eventType = "e"
         case symbol = "s"
         case closePrice = "c"
         case openPrice = "o"
@@ -29,16 +26,12 @@ enum BinanceServiceError: Error, LocalizedError {
     case invalidResponse
     case httpStatus(Int)
     case decodingFailed
-    case missingCredentials
-    case signingUnavailable
 
     var errorDescription: String? {
         switch self {
         case .invalidResponse: "Invalid response"
         case .httpStatus(let status): "HTTP \(status)"
         case .decodingFailed: "Data format changed"
-        case .missingCredentials: "Missing API key"
-        case .signingUnavailable: "Signing unavailable"
         }
     }
 }

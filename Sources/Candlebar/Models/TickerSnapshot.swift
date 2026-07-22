@@ -33,10 +33,6 @@ struct TickerSnapshot: Codable, Equatable {
         )
     }
 
-    var isPositive: Bool {
-        (priceChangePercent ?? 0) >= 0
-    }
-
     func applyingFreshness(now: Date = Date()) -> TickerSnapshot {
         guard let updatedAt else {
             return self

@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import XCTest
 @testable import Candlebar
 
@@ -45,6 +46,76 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(preferences.watchlistIntradayInterval, .fifteenMinutes)
         XCTAssertEqual(preferences.headerChartDisplayMode, .fullDay)
         XCTAssertEqual(preferences.language, .english)
+    }
+
+    func testPreferencesStoreDistinguishesMissingAndCorruptData() throws {
+        try withTemporaryDefaults { defaults in
+            let store = PreferencesStore(defaults: defaults)
+
+            XCTAssertEqual(try store.load(), .defaults)
+
+            defaults.set(Data("not-json".utf8), forKey: "candlebar.preferences.v1")
+            XCTAssertThrowsError(try store.load())
+        }
+    }
+
+    func testPreferencesStoreRoundTrips() throws {
+        try withTemporaryDefaults { defaults in
+            let store = PreferencesStore(defaults: defaults)
+            var preferences = AppPreferences.defaults
+            preferences.compactMenuBar = true
+
+            try store.save(preferences)
+
+            XCTAssertEqual(try store.load(), preferences)
+        }
+    }
+
+    func testAccountSnapshotStoreDistinguishesMissingAndCorruptData() throws {
+        try withTemporaryDefaults { defaults in
+            let store = AccountSnapshotStore(defaults: defaults)
+
+            XCTAssertEqual(try store.load(), .empty)
+
+            defaults.set(Data("not-json".utf8), forKey: "candlebar.accountSnapshots.v1")
+            XCTAssertThrowsError(try store.load())
+        }
+    }
+
+    func testAccountSnapshotStoreRoundTripsAndClears() throws {
+        try withTemporaryDefaults { defaults in
+            let store = AccountSnapshotStore(defaults: defaults)
+            let history = AccountSnapshotHistory(
+                snapshots: [AccountSnapshot(capturedAt: Date(timeIntervalSince1970: 100), usdEstimatedValue: 42)]
+            )
+
+            try store.save(history)
+            XCTAssertEqual(try store.load(), history)
+
+            store.clear()
+            XCTAssertEqual(try store.load(), .empty)
+        }
+    }
+
+    func testKeychainReadStatusDistinguishesMissingFromFailure() throws {
+        XCTAssertNil(try KeychainService.data(item: nil, status: errSecItemNotFound))
+
+        let expected = Data("credentials".utf8)
+        XCTAssertEqual(try KeychainService.data(item: expected as CFData, status: errSecSuccess), expected)
+
+        XCTAssertThrowsError(try KeychainService.data(item: nil, status: errSecAuthFailed))
+        XCTAssertThrowsError(try KeychainService.data(item: "unexpected" as CFString, status: errSecSuccess))
+    }
+
+    func testKeychainDeleteStatusAllowsMissingButSurfacesFailure() throws {
+        XCTAssertNoThrow(try KeychainService.validateDeleteStatus(errSecSuccess))
+        XCTAssertNoThrow(try KeychainService.validateDeleteStatus(errSecItemNotFound))
+        XCTAssertThrowsError(try KeychainService.validateDeleteStatus(errSecAuthFailed))
+    }
+
+    func testKeychainErrorStatusIsLocalized() {
+        XCTAssertEqual(LocalizedCopy.apiKeyStatusText("KEYCHAIN ERROR", language: .english), "KEYCHAIN ERROR")
+        XCTAssertEqual(LocalizedCopy.apiKeyStatusText("KEYCHAIN ERROR", language: .chinese), "钥匙串错误")
     }
 
     func testIntradayIntervalSlotsMatchFullTradingDay() {
@@ -588,51 +659,11 @@ final class ModelTests: XCTestCase {
         XCTAssertFalse(short.isLong)
     }
 
-    func testPositionCarriesRealizedPnLAndLocalizedLabel() {
-        let position = FuturesPosition(
-            market: .usdMFutures,
-            symbol: "BTCUSDT",
-            side: "LONG",
-            quantity: 1,
-            entryPrice: nil,
-            markPrice: nil,
-            breakevenPrice: nil,
-            unrealizedPnL: nil,
-            realizedPnL: 12.5,
-            fundingFee: -1.25,
-            notional: nil,
-            positionInitialMargin: nil,
-            liquidationPrice: nil,
-            leverage: nil,
-        )
-
-        XCTAssertEqual(position.realizedPnL, 12.5)
-        XCTAssertEqual(position.fundingFee, -1.25)
+    func testLocalizedPositionIncomeLabels() {
         XCTAssertEqual(LocalizedCopy.text(.positionRealizedPnL, language: .english), "RPNL")
         XCTAssertEqual(LocalizedCopy.text(.positionRealizedPnL, language: .chinese), "已实现盈亏")
         XCTAssertEqual(LocalizedCopy.text(.positionFundingFee, language: .english), "FUNDING")
         XCTAssertEqual(LocalizedCopy.text(.positionFundingFee, language: .chinese), "资金费")
-    }
-
-    func testAccountOverviewCarriesPartialSourceMessage() {
-        let overview = AccountOverview(
-            status: .warning,
-            statusText: "ACCOUNT PARTIAL",
-            usdEstimatedValue: 100,
-            usdEstimatedChangeToday: nil,
-            usdEstimatedChangePercentToday: nil,
-            spotEstimatedValue: 100,
-            usdMWalletBalance: nil,
-            usdMUnrealizedPnL: nil,
-            coinMWalletBalance: nil,
-            coinMUnrealizedPnL: nil,
-            positions: [],
-            updatedAt: Date(timeIntervalSince1970: 100),
-            message: "USD-M ACCOUNT: HTTP 403",
-        )
-
-        XCTAssertEqual(overview.status, .warning)
-        XCTAssertEqual(overview.message, "USD-M ACCOUNT: HTTP 403")
     }
 
     func testExchangeSymbolMatchesSymbolBaseQuoteAndPair() {
@@ -692,6 +723,13 @@ final class ModelTests: XCTestCase {
         history.record(AccountSnapshot(capturedAt: now.addingTimeInterval(-1 * 60 * 60), usdEstimatedValue: 110), now: now)
 
         XCTAssertEqual(history.baseline24h(now: now)?.usdEstimatedValue, 100)
+    }
+
+    private func withTemporaryDefaults(_ body: (UserDefaults) throws -> Void) throws {
+        let suiteName = "CandlebarTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        try body(defaults)
     }
 }
 

@@ -15,14 +15,6 @@ enum MarketType: String, CaseIterable, Codable, Identifiable {
         }
     }
 
-    var displayName: String {
-        switch self {
-        case .spot: "Spot"
-        case .usdMFutures: "USD-M Futures"
-        case .coinMFutures: "COIN-M Futures"
-        }
-    }
-
     var tickerBaseURL: URL {
         switch self {
         case .spot:

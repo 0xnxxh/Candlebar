@@ -8,18 +8,15 @@ final class PreferencesStore {
         self.defaults = defaults
     }
 
-    func load() -> AppPreferences {
-        guard let data = defaults.data(forKey: key),
-              let preferences = try? JSONDecoder().decode(AppPreferences.self, from: data) else {
+    func load() throws -> AppPreferences {
+        guard let data = defaults.data(forKey: key) else {
             return .defaults
         }
-        return preferences
+        return try JSONDecoder().decode(AppPreferences.self, from: data)
     }
 
-    func save(_ preferences: AppPreferences) {
-        guard let data = try? JSONEncoder().encode(preferences) else {
-            return
-        }
+    func save(_ preferences: AppPreferences) throws {
+        let data = try JSONEncoder().encode(preferences)
         defaults.set(data, forKey: key)
     }
 }

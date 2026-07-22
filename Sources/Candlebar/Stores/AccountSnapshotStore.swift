@@ -8,18 +8,15 @@ final class AccountSnapshotStore {
         self.defaults = defaults
     }
 
-    func load() -> AccountSnapshotHistory {
-        guard let data = defaults.data(forKey: key),
-              let history = try? JSONDecoder().decode(AccountSnapshotHistory.self, from: data) else {
+    func load() throws -> AccountSnapshotHistory {
+        guard let data = defaults.data(forKey: key) else {
             return .empty
         }
-        return history
+        return try JSONDecoder().decode(AccountSnapshotHistory.self, from: data)
     }
 
-    func save(_ history: AccountSnapshotHistory) {
-        guard let data = try? JSONEncoder().encode(history) else {
-            return
-        }
+    func save(_ history: AccountSnapshotHistory) throws {
+        let data = try JSONEncoder().encode(history)
         defaults.set(data, forKey: key)
     }
 

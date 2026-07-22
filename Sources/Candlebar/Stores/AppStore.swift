@@ -58,12 +58,22 @@ final class AppStore: ObservableObject {
         self.symbolService = symbolService
         self.accountService = accountService
         self.keychainService = keychainService
-        var loaded = preferencesStore.load()
+        var loadError: Error?
+        var loaded: AppPreferences
+        do {
+            loaded = try preferencesStore.load()
+        } catch {
+            loaded = .defaults
+            loadError = error
+        }
         if loaded.defaultSymbolID == nil {
             loaded.defaultSymbolID = loaded.watchlist.first?.id
         }
         loaded.priceDecimalPlaces = min(8, max(0, loaded.priceDecimalPlaces))
         preferences = loaded
+        if let loadError {
+            report(loadError, context: "Failed to load preferences")
+        }
         loadAPIKeyState()
         start()
     }
@@ -261,9 +271,18 @@ final class AppStore: ObservableObject {
             accountOverview = .notConfigured
             return
         }
-        guard let credentials = keychainService.loadCredentials() else {
-            apiKeyState = .missing
-            accountOverview = .notConfigured
+        let credentials: StoredAPIKey
+        do {
+            guard let storedCredentials = try keychainService.loadCredentials() else {
+                apiKeyState = .missing
+                accountOverview = .notConfigured
+                return
+            }
+            credentials = storedCredentials
+        } catch {
+            apiKeyState = .error
+            accountOverview = .keychainError(error.localizedDescription)
+            report(error, context: "Failed to load API key")
             return
         }
         apiKeyState = APIKeyState(hasKey: true, statusText: "KEY STORED")
@@ -400,8 +419,7 @@ final class AppStore: ObservableObject {
             apiSecretDraft = ""
             Task { await refreshAccount() }
         } catch {
-            lastError = error.localizedDescription
-            logger.error("Failed to save API key: \(error.localizedDescription, privacy: .public)")
+            report(error, context: "Failed to save API key")
         }
     }
 
@@ -410,12 +428,16 @@ final class AppStore: ObservableObject {
     }
 
     func deleteAPIKey() {
-        keychainService.delete()
-        accountSnapshotStore.clear()
-        loadAPIKeyState()
-        accountOverview = .notConfigured
-        apiKeyDraft = ""
-        apiSecretDraft = ""
+        do {
+            try keychainService.delete()
+            accountSnapshotStore.clear()
+            loadAPIKeyState()
+            accountOverview = .notConfigured
+            apiKeyDraft = ""
+            apiSecretDraft = ""
+        } catch {
+            report(error, context: "Failed to delete API key")
+        }
     }
 
     func exportDiagnostics() {
@@ -434,20 +456,25 @@ final class AppStore: ObservableObject {
             apiKeyState = .missing
             return
         }
-        apiKeyState = keychainService.loadCredentials() == nil
-            ? .missing
-            : APIKeyState(hasKey: true, statusText: "KEY STORED")
-    }
-
-    private func persist() {
-        preferencesStore.save(preferences)
+        do {
+            apiKeyState = try keychainService.loadCredentials() == nil
+                ? .missing
+                : APIKeyState(hasKey: true, statusText: "KEY STORED")
+        } catch {
+            apiKeyState = .error
+            report(error, context: "Failed to read API key state")
+        }
     }
 
     private func updatePreferences(_ transform: (inout AppPreferences) -> Void) {
         var updated = preferences
         transform(&updated)
         preferences = updated
-        persist()
+        do {
+            try preferencesStore.save(updated)
+        } catch {
+            report(error, context: "Failed to save preferences")
+        }
     }
 
     private func publishMenuBarLabel() {
@@ -459,10 +486,19 @@ final class AppStore: ObservableObject {
             return overview
         }
         let now = overview.updatedAt ?? Date()
-        var history = accountSnapshotStore.load()
-        history.record(AccountSnapshot(capturedAt: now, usdEstimatedValue: currentValue), now: now)
-        accountSnapshotStore.save(history)
+        do {
+            var history = try accountSnapshotStore.load()
+            history.record(AccountSnapshot(capturedAt: now, usdEstimatedValue: currentValue), now: now)
+            try accountSnapshotStore.save(history)
+        } catch {
+            report(error, context: "Failed to save account snapshot")
+        }
         return overview
+    }
+
+    private func report(_ error: Error, context: String) {
+        lastError = error.localizedDescription
+        logger.error("\(context, privacy: .public): \(error.localizedDescription, privacy: .public)")
     }
 
     private func searchSymbols(forceRefresh: Bool = false) {
