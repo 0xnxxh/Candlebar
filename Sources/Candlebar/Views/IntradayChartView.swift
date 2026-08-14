@@ -7,8 +7,9 @@ struct IntradayCandlestickView: View {
     var tint: Color
 
     var body: some View {
-        Canvas { context, size in
-            let chart = IntradayChartData(series: series, currentPrice: currentPrice, displayMode: displayMode)
+        // Built once per view update instead of on every Canvas draw pass.
+        let chart = IntradayChartData(series: series, currentPrice: currentPrice, displayMode: displayMode)
+        return Canvas { context, size in
             guard chart.hasValues else {
                 drawEmptyState(context: context, size: size)
                 return
@@ -81,8 +82,9 @@ struct IntradaySparklineView: View {
     var tint: Color
 
     var body: some View {
-        Canvas { context, size in
-            let chart = IntradayChartData(series: series, currentPrice: currentPrice)
+        // Built once per view update instead of on every Canvas draw pass.
+        let chart = IntradayChartData(series: series, currentPrice: currentPrice)
+        return Canvas { context, size in
             guard chart.hasValues else {
                 drawEmptyState(context: context, size: size)
                 return
@@ -138,13 +140,11 @@ struct IntradaySparklineView: View {
 }
 
 struct IntradayChartData {
-    private static let maxVisiblePoints = 48
     private static let verticalInset: CGFloat = 3
 
     let baseline: Decimal
     let visibleCandleSlots: [IntradayCandle?]
     let visibleCloseSlots: [Decimal?]
-    let visibleCloses: [Decimal]
     private let minValue: Decimal
     private let maxValue: Decimal
 
@@ -171,11 +171,6 @@ struct IntradayChartData {
             displayMode: displayMode,
         )
         visibleCloseSlots = visibleCandleSlots.map { $0?.close }
-        var closes = Self.sample(adjustedCandles.map(\.close), limit: Self.maxVisiblePoints)
-        if closes.count == 1 {
-            closes.append(closes[0])
-        }
-        visibleCloses = closes
 
         let candleValues = adjustedCandles.flatMap { [$0.high, $0.low, $0.open, $0.close] }
         let values = candleValues + [baseline] + [currentPrice].compactMap { $0 }
@@ -184,7 +179,7 @@ struct IntradayChartData {
     }
 
     var hasValues: Bool {
-        visibleCandleSlots.contains { $0 != nil } || !visibleCloses.isEmpty
+        visibleCandleSlots.contains { $0 != nil }
     }
 
     func y(for value: Decimal, in size: CGSize) -> CGFloat? {
@@ -198,16 +193,6 @@ struct IntradayChartData {
         let ratio = (current - minimum) / range
         let drawableHeight = max(1, size.height - Self.verticalInset * 2)
         return size.height - Self.verticalInset - CGFloat(ratio) * drawableHeight
-    }
-
-    private static func sample<T>(_ values: [T], limit: Int) -> [T] {
-        guard values.count > limit, limit > 1 else {
-            return values
-        }
-        return (0..<limit).map { index in
-            let sourceIndex = Int((Double(index) / Double(limit - 1)) * Double(values.count - 1))
-            return values[sourceIndex]
-        }
     }
 
     private static func visibleCandleSlots(

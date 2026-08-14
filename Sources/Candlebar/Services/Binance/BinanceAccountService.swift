@@ -14,8 +14,13 @@ final class BinanceAccountService: @unchecked Sendable {
     private static let incomeHistoryLimit = 1000
     private static let millisecondsPerDay: Int64 = 24 * 60 * 60 * 1000
 
+    private static let incomeOverlapMilliseconds: Int64 = 5 * 60 * 1000
+    private static let maxConcurrentIncomeRequests = 4
+
     private let session: URLSession
     private var dailyChangeCache: DailyAccountChange?
+    private var incomeRecordCache: [IncomeCacheKey: [String: IncomeRecord]] = [:]
+    private var incomeWatermark: [IncomeCacheKey: Int64] = [:]
 
     init(session: URLSession = .shared) {
         self.session = session
@@ -433,6 +438,9 @@ final class BinanceAccountService: @unchecked Sendable {
         }
     }
 
+    /// Income history is immutable once written, so each refresh only re-queries a short
+    /// overlap window instead of the full 90-day lookback. Records are cached by transaction
+    /// id and pruned to the lookback window, which keeps totals identical to a full rescan.
     private func incomeTotalsBySymbol(
         market: MarketType,
         symbols: Set<String>,
@@ -457,43 +465,121 @@ final class BinanceAccountService: @unchecked Sendable {
             label = "COIN-M INCOME"
         }
 
-        var totals = Dictionary(uniqueKeysWithValues: symbols.map { ($0, FuturesIncomeTotals()) })
+        let windowStart = incomeHistoryStartTime(now: timestamp)
+        let requests = symbols.sorted().map { symbol -> (symbol: String, startTime: Int64) in
+            let key = IncomeCacheKey(market: market, symbol: symbol)
+            guard let watermark = incomeWatermark[key] else {
+                return (symbol, windowStart)
+            }
+            return (symbol, max(windowStart, watermark - Self.incomeOverlapMilliseconds))
+        }
 
-        for symbol in symbols.sorted() {
-            for incomeType in FuturesIncomeType.allCases {
-                var startTime = incomeHistoryStartTime(now: timestamp)
-                while startTime <= timestamp {
-                    let payloads: [IncomeHistoryPayload]? = await optionalSignedRequest(
+        let fetched = await withTaskGroup(
+            of: (symbol: String, records: [IncomeRecord], errors: [String]).self,
+        ) { group in
+            var pending = requests.makeIterator()
+            var inFlight = 0
+            var collected: [(symbol: String, records: [IncomeRecord], errors: [String])] = []
+
+            func addNext(
+                to group: inout TaskGroup<(symbol: String, records: [IncomeRecord], errors: [String])>,
+            ) {
+                guard let request = pending.next() else { return }
+                inFlight += 1
+                group.addTask { [self] in
+                    await fetchIncomeRecords(
+                        symbol: request.symbol,
+                        path: path,
+                        label: label,
+                        market: market,
+                        credentials: credentials,
+                        startTime: request.startTime,
+                        endTime: timestamp,
+                    )
+                }
+            }
+
+            for _ in 0..<Self.maxConcurrentIncomeRequests {
+                addNext(to: &group)
+            }
+            while inFlight > 0, let result = await group.next() {
+                inFlight -= 1
+                collected.append(result)
+                addNext(to: &group)
+            }
+            return collected
+        }
+
+        let activeKeys = Set(symbols.map { IncomeCacheKey(market: market, symbol: $0) })
+        incomeRecordCache = incomeRecordCache.filter { $0.key.market != market || activeKeys.contains($0.key) }
+        incomeWatermark = incomeWatermark.filter { $0.key.market != market || activeKeys.contains($0.key) }
+
+        var totals: [String: FuturesIncomeTotals] = [:]
+        for result in fetched {
+            errors.append(contentsOf: result.errors)
+            let key = IncomeCacheKey(market: market, symbol: result.symbol)
+            var records = incomeRecordCache[key] ?? [:]
+            for record in result.records {
+                records[record.id] = record
+            }
+            records = records.filter { $0.value.time >= windowStart }
+            incomeRecordCache[key] = records
+            if result.errors.isEmpty {
+                incomeWatermark[key] = timestamp
+            }
+
+            var symbolTotals = FuturesIncomeTotals()
+            for record in records.values {
+                symbolTotals.add(record, decimal: decimal)
+            }
+            totals[result.symbol] = symbolTotals
+        }
+        return totals
+    }
+
+    private func fetchIncomeRecords(
+        symbol: String,
+        path: String,
+        label: String,
+        market: MarketType,
+        credentials: StoredAPIKey,
+        startTime: Int64,
+        endTime: Int64,
+    ) async -> (symbol: String, records: [IncomeRecord], errors: [String]) {
+        var records: [IncomeRecord] = []
+        var errors: [String] = []
+
+        for incomeType in FuturesIncomeType.allCases {
+            var pageStart = startTime
+            while pageStart <= endTime {
+                let payloads: [IncomeHistoryPayload]
+                do {
+                    payloads = try await signedRequest(
                         baseURL: market.accountBaseURL,
                         path: path,
                         queryItems: incomeHistoryQueryItems(
                             symbol: symbol,
                             incomeType: incomeType.rawValue,
-                            startTime: startTime,
-                            endTime: timestamp,
+                            startTime: pageStart,
+                            endTime: endTime,
                         ),
                         credentials: credentials,
-                        timestamp: timestamp,
-                        label: "\(label) \(symbol) \(incomeType.rawValue)",
-                        errors: &errors,
+                        timestamp: endTime,
                     )
-
-                    guard let payloads else {
-                        break
-                    }
-
-                    payloads.forEach { payload in
-                        totals[symbol, default: FuturesIncomeTotals()].add(payload, decimal: decimal)
-                    }
-                    guard payloads.count == Self.incomeHistoryLimit,
-                          let nextTime = payloads.compactMap(\.time).max().map({ $0 + 1 }) else {
-                        break
-                    }
-                    startTime = nextTime
+                } catch {
+                    errors.append("\(label) \(symbol) \(incomeType.rawValue): \(error.localizedDescription)")
+                    break
                 }
+
+                records.append(contentsOf: payloads.map(IncomeRecord.init(payload:)))
+                guard payloads.count == Self.incomeHistoryLimit,
+                      let nextTime = payloads.compactMap(\.time).max().map({ $0 + 1 }) else {
+                    break
+                }
+                pageStart = nextTime
             }
         }
-        return totals
+        return (symbol, records, errors)
     }
 
     func incomeHistoryQueryItems(
@@ -579,15 +665,39 @@ private struct IncomeHistoryPayload: Decodable {
     let incomeType: String
     let income: String
     let time: Int64?
+    let tranId: Int64?
+}
+
+private struct IncomeCacheKey: Hashable {
+    let market: MarketType
+    let symbol: String
+}
+
+private struct IncomeRecord: Sendable {
+    let id: String
+    let time: Int64
+    let incomeType: String
+    let income: String
+
+    init(payload: IncomeHistoryPayload) {
+        time = payload.time ?? 0
+        incomeType = payload.incomeType
+        income = payload.income
+        if let tranId = payload.tranId {
+            id = "\(payload.incomeType):\(tranId)"
+        } else {
+            id = "\(payload.incomeType):\(time):\(payload.income)"
+        }
+    }
 }
 
 private struct FuturesIncomeTotals {
     var realizedPnL = Decimal(0)
     var fundingFee = Decimal(0)
 
-    mutating func add(_ payload: IncomeHistoryPayload, decimal: (String?) -> Decimal?) {
-        let amount = decimal(payload.income) ?? 0
-        switch payload.incomeType {
+    mutating func add(_ record: IncomeRecord, decimal: (String?) -> Decimal?) {
+        let amount = decimal(record.income) ?? 0
+        switch record.incomeType {
         case FuturesIncomeType.realizedPnL.rawValue:
             realizedPnL += amount
         case FuturesIncomeType.fundingFee.rawValue:

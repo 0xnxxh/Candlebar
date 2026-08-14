@@ -561,6 +561,87 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(MockURLProtocol.recordedIncomeTypes, ["COMMISSION", "FUNDING_FEE", "REALIZED_PNL"])
     }
 
+    func testRepeatedAccountRefreshOnlyRefetchesIncomeOverlapWindow() async {
+        MockURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let service = BinanceAccountService(session: URLSession(configuration: configuration))
+        MockURLProtocol.handler = Self.incomeStubHandler
+
+        let first = await service.validate(credentials: StoredAPIKey(apiKey: "key", secret: "secret"))
+        let firstStartTimes = MockURLProtocol.recordedIncomeStartTimes
+        let second = await service.validate(credentials: StoredAPIKey(apiKey: "key", secret: "secret"))
+        let secondStartTimes = Array(MockURLProtocol.recordedIncomeStartTimes.dropFirst(firstStartTimes.count))
+
+        XCTAssertEqual(Set(firstStartTimes), ["1775116601000"])
+        XCTAssertEqual(Set(secondStartTimes), ["1782892301000"])
+        XCTAssertEqual(second.positions.first?.realizedPnL, first.positions.first?.realizedPnL)
+        XCTAssertEqual(second.positions.first?.fundingFee, first.positions.first?.fundingFee)
+    }
+
+    func testRepeatedIncomeRecordsAreDeduplicatedByTransactionID() async {
+        MockURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let service = BinanceAccountService(session: URLSession(configuration: configuration))
+        MockURLProtocol.handler = Self.incomeStubHandler
+
+        _ = await service.validate(credentials: StoredAPIKey(apiKey: "key", secret: "secret"))
+        let overview = await service.validate(credentials: StoredAPIKey(apiKey: "key", secret: "secret"))
+
+        XCTAssertEqual(overview.positions.first?.realizedPnL, Decimal(string: "309.63"))
+        XCTAssertEqual(overview.positions.first?.fundingFee, Decimal(string: "-29.62"))
+    }
+
+    private static let incomeStubHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
+        let url = try XCTUnwrap(request.url)
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let query = Dictionary(uniqueKeysWithValues: components.queryItems?.map { ($0.name, $0.value ?? "") } ?? [])
+        MockURLProtocol.record(url: url, query: query)
+
+        let body: String
+        switch components.path {
+        case "/api/v3/time":
+            body = #"{"serverTime":1782892601000}"#
+        case "/api/v3/account":
+            body = #"{"balances":[]}"#
+        case "/fapi/v3/account":
+            body = #"{"totalWalletBalance":"100","totalUnrealizedProfit":"0"}"#
+        case "/fapi/v3/positionRisk":
+            body = #"[{"symbol":"BTCUSDT","positionAmt":"1","markPrice":"110","unRealizedProfit":"10"}]"#
+        case "/fapi/v1/symbolConfig":
+            body = #"[{"symbol":"BTCUSDT","leverage":5}]"#
+        case "/dapi/v1/account":
+            body = #"{"totalWalletBalance":"0","totalUnrealizedProfit":"0"}"#
+        case "/dapi/v1/positionRisk":
+            body = #"[]"#
+        case "/sapi/v1/accountSnapshot":
+            body = #"{"code":200,"snapshotVos":[]}"#
+        case "/fapi/v1/income":
+            switch query["incomeType"] {
+            case "REALIZED_PNL":
+                body = #"[{"symbol":"BTCUSDT","incomeType":"REALIZED_PNL","income":"340.34","time":1782892600000,"tranId":1}]"#
+            case "FUNDING_FEE":
+                body = #"[{"symbol":"BTCUSDT","incomeType":"FUNDING_FEE","income":"-29.62","time":1782892600000,"tranId":2}]"#
+            case "COMMISSION":
+                body = #"[{"symbol":"BTCUSDT","incomeType":"COMMISSION","income":"-1.09","time":1782892600000,"tranId":3}]"#
+            default:
+                body = #"[]"#
+            }
+        default:
+            XCTFail("Unexpected request path: \(components.path)")
+            body = #"{}"#
+        }
+
+        let response = HTTPURLResponse(
+            url: url,
+            statusCode: 200,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"],
+        )!
+        return (response, Data(body.utf8))
+    }
+
     func testPositionPnLRatioUsesInitialMarginROI() {
         let long = FuturesPosition(
             market: .usdMFutures,
@@ -747,6 +828,10 @@ private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
         state.recordedIncomeTypes
     }
 
+    static var recordedIncomeStartTimes: [String] {
+        state.recordedIncomeStartTimes
+    }
+
     static func reset() {
         state.reset()
     }
@@ -794,6 +879,14 @@ private final class MockURLProtocolState: @unchecked Sendable {
                 .filter { $0.url.path == "/fapi/v1/income" }
                 .compactMap { $0.query["incomeType"] }
                 .sorted()
+        }
+    }
+
+    var recordedIncomeStartTimes: [String] {
+        lock.withLock {
+            requests
+                .filter { $0.url.path == "/fapi/v1/income" }
+                .compactMap { $0.query["startTime"] }
         }
     }
 

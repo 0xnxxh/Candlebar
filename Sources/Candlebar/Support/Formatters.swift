@@ -6,11 +6,10 @@ enum CandleFormat {
         let number = value as NSDecimalNumber
         let absolute = number.decimalValue.magnitude
         let fixedPlaces = decimalPlaces.map { min(8, max(0, $0)) }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.usesGroupingSeparator = true
-        formatter.minimumFractionDigits = fixedPlaces ?? 0
-        formatter.maximumFractionDigits = fixedPlaces ?? (absolute >= 100 ? 2 : 6)
+        let formatter = PriceFormatterCache.shared.formatter(
+            minimumFractionDigits: fixedPlaces ?? 0,
+            maximumFractionDigits: fixedPlaces ?? (absolute >= 100 ? 2 : 6),
+        )
         return formatter.string(from: number) ?? "\(value)"
     }
 
@@ -56,5 +55,30 @@ enum CandleFormat {
 extension Decimal {
     var magnitude: Decimal {
         self < 0 ? -self : self
+    }
+}
+
+/// `NumberFormatter` construction is expensive and price formatting runs for every
+/// visible row on each redraw, so formatters are reused per digit configuration.
+private final class PriceFormatterCache: @unchecked Sendable {
+    static let shared = PriceFormatterCache()
+
+    private let lock = NSLock()
+    private var formatters: [Int: NumberFormatter] = [:]
+
+    func formatter(minimumFractionDigits: Int, maximumFractionDigits: Int) -> NumberFormatter {
+        let key = minimumFractionDigits * 100 + maximumFractionDigits
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = formatters[key] {
+            return cached
+        }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
+        formatter.minimumFractionDigits = minimumFractionDigits
+        formatter.maximumFractionDigits = maximumFractionDigits
+        formatters[key] = formatter
+        return formatter
     }
 }

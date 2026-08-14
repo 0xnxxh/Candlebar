@@ -38,9 +38,11 @@ final class AppStore: ObservableObject {
     private var intradayTask: Task<Void, Never>?
     private var freshnessTask: Task<Void, Never>?
     private var symbolSearchTask: Task<Void, Never>?
+    private var lastPublishedMenuBarLabel: String?
     private static let tickerFallbackRefreshSeconds: Int64 = 10
     private static let intradayRefreshSeconds: Int64 = 60
     private static let accountRefreshSeconds: Int64 = 30
+    private static let maxConcurrentRequests = 6
 
     init(
         preferencesStore: PreferencesStore = PreferencesStore(),
@@ -160,27 +162,43 @@ final class AppStore: ObservableObject {
             tickers[item.cacheKey] = tickers[item.cacheKey] ?? .loading(for: item)
         }
 
-        for item in items {
-            let result: (String, TickerSnapshot)
-            do {
-                let ticker = try await tickerService.fetchTicker(for: item)
-                result = (item.cacheKey, ticker)
-            } catch {
-                result = (
-                    item.cacheKey,
-                    TickerSnapshot(
-                        symbol: item.symbol,
-                        market: item.market,
-                        lastPrice: nil,
-                        priceChangePercent: nil,
-                        updatedAt: nil,
-                        status: .error,
-                        message: error.localizedDescription,
-                    )
-                )
+        let service = tickerService
+        await withTaskGroup(of: (String, TickerSnapshot).self) { group in
+            var pending = items.makeIterator()
+            var inFlight = 0
+
+            func addNext(to group: inout TaskGroup<(String, TickerSnapshot)>) {
+                guard let item = pending.next() else { return }
+                inFlight += 1
+                group.addTask {
+                    do {
+                        return (item.cacheKey, try await service.fetchTicker(for: item))
+                    } catch {
+                        return (
+                            item.cacheKey,
+                            TickerSnapshot(
+                                symbol: item.symbol,
+                                market: item.market,
+                                lastPrice: nil,
+                                priceChangePercent: nil,
+                                updatedAt: nil,
+                                status: .error,
+                                message: error.localizedDescription,
+                            )
+                        )
+                    }
+                }
             }
-            tickers[result.0] = mergeStaleAware(new: result.1, existing: tickers[result.0])
-            publishMenuBarLabel()
+
+            for _ in 0..<Self.maxConcurrentRequests {
+                addNext(to: &group)
+            }
+            while inFlight > 0, let result = await group.next() {
+                inFlight -= 1
+                tickers[result.0] = mergeStaleAware(new: result.1, existing: tickers[result.0])
+                publishMenuBarLabel()
+                addNext(to: &group)
+            }
         }
     }
 
@@ -238,30 +256,50 @@ final class AppStore: ObservableObject {
             self[keyPath: keyPath][item.cacheKey] = self[keyPath: keyPath][item.cacheKey] ?? .loading(for: item, interval: interval)
         }
 
-        for item in items {
-            let result: (String, IntradaySeries)
-            do {
-                let series = try await klineService.fetchIntradaySeries(for: item, interval: interval)
-                result = (item.cacheKey, series)
-            } catch {
-                result = (
-                    item.cacheKey,
-                    IntradaySeries(
-                        symbol: item.symbol,
-                        market: item.market,
-                        interval: interval,
-                        dayStart: UTCTradingDay.start(of: Date()),
-                        candles: [],
-                        updatedAt: nil,
-                        status: .error,
-                        message: error.localizedDescription,
-                    )
+        let service = klineService
+        await withTaskGroup(of: (String, IntradaySeries).self) { group in
+            var pending = items.makeIterator()
+            var inFlight = 0
+
+            func addNext(to group: inout TaskGroup<(String, IntradaySeries)>) {
+                guard let item = pending.next() else { return }
+                inFlight += 1
+                group.addTask {
+                    do {
+                        return (item.cacheKey, try await service.fetchIntradaySeries(for: item, interval: interval))
+                    } catch {
+                        return (
+                            item.cacheKey,
+                            IntradaySeries(
+                                symbol: item.symbol,
+                                market: item.market,
+                                interval: interval,
+                                dayStart: UTCTradingDay.start(of: Date()),
+                                candles: [],
+                                updatedAt: nil,
+                                status: .error,
+                                message: error.localizedDescription,
+                            )
+                        )
+                    }
+                }
+            }
+
+            for _ in 0..<Self.maxConcurrentRequests {
+                addNext(to: &group)
+            }
+            while inFlight > 0, let result = await group.next() {
+                inFlight -= 1
+                guard isCurrent(self) else {
+                    group.cancelAll()
+                    return
+                }
+                self[keyPath: keyPath][result.0] = mergeIntradayStaleAware(
+                    new: result.1,
+                    existing: self[keyPath: keyPath][result.0],
                 )
+                addNext(to: &group)
             }
-            guard isCurrent(self) else {
-                return
-            }
-            self[keyPath: keyPath][result.0] = mergeIntradayStaleAware(new: result.1, existing: self[keyPath: keyPath][result.0])
         }
     }
 
@@ -478,7 +516,12 @@ final class AppStore: ObservableObject {
     }
 
     private func publishMenuBarLabel() {
-        menuBarLabelDidChange?(menuBarLabelText)
+        let text = menuBarLabelText
+        guard text != lastPublishedMenuBarLabel else {
+            return
+        }
+        lastPublishedMenuBarLabel = text
+        menuBarLabelDidChange?(text)
     }
 
     private func accountOverviewWithSnapshot(_ overview: AccountOverview) -> AccountOverview {
@@ -649,7 +692,11 @@ final class AppStore: ObservableObject {
     }
 
     private func applyFreshness() {
-        tickers = tickers.mapValues { $0.applyingFreshness() }
+        let refreshed = tickers.mapValues { $0.applyingFreshness() }
+        guard refreshed != tickers else {
+            return
+        }
+        tickers = refreshed
         publishMenuBarLabel()
     }
 
