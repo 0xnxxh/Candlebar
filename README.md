@@ -14,6 +14,7 @@ It is built for quick glances: one default symbol stays in the menu bar, and the
 
 - Live menu bar price for your default trading pair.
 - Watchlist for Binance Spot, USD-M Futures, and COIN-M Futures symbols.
+- Optional screen-edge sidebar with one ring per watchlist symbol plus an account ring; drag it to dock left or right.
 - Read-only Binance account overview for balances, positions, unrealized PnL, leverage, and liquidation references.
 - Local-only settings and Keychain storage for API credentials.
 - English and Chinese interface.

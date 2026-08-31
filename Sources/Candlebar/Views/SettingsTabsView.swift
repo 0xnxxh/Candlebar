@@ -131,6 +131,20 @@ struct SettingsAppearanceTab: View {
                     ),
                 )
                 ToggleRow(
+                    title: LocalizedCopy.text(.showSidebar, language: store.preferences.language),
+                    isOn: Binding(
+                        get: { store.preferences.showSidebar },
+                        set: store.updateShowSidebar,
+                    ),
+                )
+                ToggleRow(
+                    title: LocalizedCopy.text(.showAccountRing, language: store.preferences.language),
+                    isOn: Binding(
+                        get: { store.preferences.showAccountRing },
+                        set: store.updateShowAccountRing,
+                    ),
+                )
+                ToggleRow(
                     title: LocalizedCopy.text(.hideBalances, language: store.preferences.language),
                     isOn: Binding(
                         get: { store.preferences.hideBalances },

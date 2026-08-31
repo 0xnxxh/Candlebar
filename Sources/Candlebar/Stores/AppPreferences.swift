@@ -7,6 +7,11 @@ struct AppPreferences: Codable, Equatable {
     var hideBalances: Bool
     var hideLowValueAccounts: Bool
     var pinMainPanel: Bool
+    var showSidebar: Bool
+    var sidebarEdge: SidebarEdge
+    /// Vertical center of the rail as a fraction of the visible frame, 0 = top.
+    var sidebarVerticalPosition: Double
+    var showAccountRing: Bool
     var pixelTheme: Bool
     var priceDecimalPlaces: Int
     var headerIntradayInterval: IntradayInterval
@@ -21,6 +26,10 @@ struct AppPreferences: Codable, Equatable {
         case hideBalances
         case hideLowValueAccounts
         case pinMainPanel
+        case showSidebar
+        case sidebarEdge
+        case sidebarVerticalPosition
+        case showAccountRing
         case pixelTheme
         case priceDecimalPlaces
         case intradayInterval
@@ -37,6 +46,10 @@ struct AppPreferences: Codable, Equatable {
         hideBalances: Bool,
         hideLowValueAccounts: Bool,
         pinMainPanel: Bool,
+        showSidebar: Bool,
+        sidebarEdge: SidebarEdge,
+        sidebarVerticalPosition: Double,
+        showAccountRing: Bool,
         pixelTheme: Bool,
         priceDecimalPlaces: Int,
         headerIntradayInterval: IntradayInterval,
@@ -50,6 +63,10 @@ struct AppPreferences: Codable, Equatable {
         self.hideBalances = hideBalances
         self.hideLowValueAccounts = hideLowValueAccounts
         self.pinMainPanel = pinMainPanel
+        self.showSidebar = showSidebar
+        self.sidebarEdge = sidebarEdge
+        self.sidebarVerticalPosition = sidebarVerticalPosition
+        self.showAccountRing = showAccountRing
         self.pixelTheme = pixelTheme
         self.priceDecimalPlaces = priceDecimalPlaces
         self.headerIntradayInterval = headerIntradayInterval
@@ -66,6 +83,11 @@ struct AppPreferences: Codable, Equatable {
         hideBalances = try container.decode(Bool.self, forKey: .hideBalances)
         hideLowValueAccounts = try container.decodeIfPresent(Bool.self, forKey: .hideLowValueAccounts) ?? false
         pinMainPanel = try container.decodeIfPresent(Bool.self, forKey: .pinMainPanel) ?? false
+        showSidebar = try container.decodeIfPresent(Bool.self, forKey: .showSidebar) ?? false
+        sidebarEdge = try container.decodeIfPresent(SidebarEdge.self, forKey: .sidebarEdge) ?? .right
+        let storedPosition = try container.decodeIfPresent(Double.self, forKey: .sidebarVerticalPosition) ?? 0.5
+        sidebarVerticalPosition = min(max(storedPosition, 0), 1)
+        showAccountRing = try container.decodeIfPresent(Bool.self, forKey: .showAccountRing) ?? true
         pixelTheme = try container.decode(Bool.self, forKey: .pixelTheme)
         priceDecimalPlaces = try container.decode(Int.self, forKey: .priceDecimalPlaces)
         let legacyInterval = try container.decodeIfPresent(IntradayInterval.self, forKey: .intradayInterval) ?? .fifteenMinutes
@@ -83,6 +105,10 @@ struct AppPreferences: Codable, Equatable {
         try container.encode(hideBalances, forKey: .hideBalances)
         try container.encode(hideLowValueAccounts, forKey: .hideLowValueAccounts)
         try container.encode(pinMainPanel, forKey: .pinMainPanel)
+        try container.encode(showSidebar, forKey: .showSidebar)
+        try container.encode(sidebarEdge, forKey: .sidebarEdge)
+        try container.encode(sidebarVerticalPosition, forKey: .sidebarVerticalPosition)
+        try container.encode(showAccountRing, forKey: .showAccountRing)
         try container.encode(pixelTheme, forKey: .pixelTheme)
         try container.encode(priceDecimalPlaces, forKey: .priceDecimalPlaces)
         try container.encode(headerIntradayInterval, forKey: .headerIntradayInterval)
@@ -102,6 +128,10 @@ struct AppPreferences: Codable, Equatable {
         hideBalances: false,
         hideLowValueAccounts: false,
         pinMainPanel: false,
+        showSidebar: false,
+        sidebarEdge: .right,
+        sidebarVerticalPosition: 0.5,
+        showAccountRing: true,
         pixelTheme: true,
         priceDecimalPlaces: 2,
         headerIntradayInterval: .fifteenMinutes,

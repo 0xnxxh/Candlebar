@@ -38,9 +38,11 @@ enum MainPanelLayout {
                 max(frame.origin.x, visibleFrame.minX + inset),
                 visibleFrame.maxX - inset - frame.width,
             )
+            // Only the bottom is clamped. Insetting the top too would push the
+            // panel below the menu bar gap it was just anchored to.
             frame.origin.y = min(
                 max(frame.origin.y, visibleFrame.minY + inset),
-                visibleFrame.maxY - inset - frame.height,
+                visibleFrame.maxY - frame.height,
             )
         }
 

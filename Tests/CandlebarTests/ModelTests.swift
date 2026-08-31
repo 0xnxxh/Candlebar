@@ -46,6 +46,118 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(preferences.watchlistIntradayInterval, .fifteenMinutes)
         XCTAssertEqual(preferences.headerChartDisplayMode, .fullDay)
         XCTAssertEqual(preferences.language, .english)
+        XCTAssertFalse(preferences.showSidebar)
+        XCTAssertEqual(preferences.sidebarEdge, .right)
+        XCTAssertEqual(preferences.sidebarVerticalPosition, 0.5)
+        XCTAssertTrue(preferences.showAccountRing)
+    }
+
+    func testSidebarRailFrameHugsRightEdgeAndFitsScreen() {
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+        let expanded = SidebarLayout.railFrame(
+            visibleFrame: visible, itemCount: 4, edge: .right, verticalPosition: 0.5,
+        )
+        XCTAssertEqual(expanded.width, SidebarLayout.railWidth)
+        XCTAssertEqual(expanded.maxX, visible.maxX)
+        XCTAssertEqual(expanded.midY, visible.midY, accuracy: 1)
+
+        // A watchlist taller than the screen must still fit inside it.
+        let crowded = SidebarLayout.railFrame(
+            visibleFrame: visible, itemCount: 30, edge: .right, verticalPosition: 0.5,
+        )
+        XCTAssertEqual(crowded.height, visible.height)
+    }
+
+    func testSidebarRailFrameDocksToLeftEdge() {
+        let visible = NSRect(x: 100, y: 50, width: 1440, height: 900)
+        let left = SidebarLayout.railFrame(
+            visibleFrame: visible, itemCount: 4, edge: .left, verticalPosition: 0.5,
+        )
+        XCTAssertEqual(left.minX, visible.minX)
+    }
+
+    func testSidebarVerticalPositionRoundTripsThroughRailOrigin() {
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+        let top = SidebarLayout.railFrame(
+            visibleFrame: visible, itemCount: 3, edge: .right, verticalPosition: 0,
+        )
+        XCTAssertEqual(top.maxY, visible.maxY, accuracy: 1)
+
+        let bottom = SidebarLayout.railFrame(
+            visibleFrame: visible, itemCount: 3, edge: .right, verticalPosition: 1,
+        )
+        XCTAssertEqual(bottom.minY, visible.minY, accuracy: 1)
+
+        for position in [0.0, 0.25, 0.5, 1.0] {
+            let frame = SidebarLayout.railFrame(
+                visibleFrame: visible, itemCount: 3, edge: .right, verticalPosition: position,
+            )
+            XCTAssertEqual(
+                SidebarLayout.verticalPosition(railFrame: frame, visibleFrame: visible),
+                position,
+                accuracy: 0.01,
+            )
+        }
+    }
+
+    func testSidebarDragResolvesEdgeAndStaysOnScreen() {
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+        XCTAssertEqual(SidebarLayout.resolvedEdge(railCenterX: 100, visibleFrame: visible), .left)
+        XCTAssertEqual(SidebarLayout.resolvedEdge(railCenterX: 1300, visibleFrame: visible), .right)
+
+        let offScreen = NSRect(x: -400, y: -400, width: 68, height: 300)
+        let clamped = SidebarLayout.clampedDragFrame(offScreen, visibleFrame: visible)
+        XCTAssertEqual(clamped.minX, visible.minX)
+        XCTAssertEqual(clamped.minY, visible.minY)
+        XCTAssertLessThanOrEqual(
+            SidebarLayout.clampedDragFrame(NSRect(x: 5000, y: 5000, width: 68, height: 300), visibleFrame: visible).maxX,
+            visible.maxX,
+        )
+    }
+
+    func testSidebarBubbleFrameSitsBesideRailOnEitherEdge() {
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let size = CGSize(width: 330, height: 260)
+
+        let rightRail = SidebarLayout.railFrame(
+            visibleFrame: visible, itemCount: 6, edge: .right, verticalPosition: 0.5,
+        )
+        let right = SidebarLayout.bubbleFrame(
+            railFrame: rightRail, itemIndex: 0, bubbleSize: size, visibleFrame: visible, edge: .right,
+        )
+        XCTAssertEqual(right.maxX, rightRail.minX - SidebarLayout.bubbleGap)
+        XCTAssertEqual(right.width, size.width)
+        XCTAssertEqual(right.height, size.height)
+
+        let leftRail = SidebarLayout.railFrame(
+            visibleFrame: visible, itemCount: 6, edge: .left, verticalPosition: 0.5,
+        )
+        let left = SidebarLayout.bubbleFrame(
+            railFrame: leftRail, itemIndex: 0, bubbleSize: size, visibleFrame: visible, edge: .left,
+        )
+        XCTAssertEqual(left.minX, leftRail.maxX + SidebarLayout.bubbleGap)
+
+        // A short screen forces the bubble to be clamped rather than centered.
+        let shortScreen = NSRect(x: 0, y: 0, width: 1440, height: 300)
+        let shortRail = SidebarLayout.railFrame(
+            visibleFrame: shortScreen, itemCount: 6, edge: .right, verticalPosition: 0.5,
+        )
+        let clamped = SidebarLayout.bubbleFrame(
+            railFrame: shortRail, itemIndex: 5, bubbleSize: size, visibleFrame: shortScreen, edge: .right,
+        )
+        XCTAssertGreaterThanOrEqual(clamped.minY, shortScreen.minY + SidebarLayout.bubbleGap)
+        XCTAssertLessThanOrEqual(clamped.maxY, shortScreen.maxY - SidebarLayout.bubbleGap)
+    }
+
+    func testSidebarRingFractionMapsPercentMagnitude() {
+        XCTAssertEqual(SidebarLayout.ringFraction(percent: nil), 0)
+        XCTAssertEqual(SidebarLayout.ringFraction(percent: 0), 0)
+        XCTAssertEqual(SidebarLayout.ringFraction(percent: Decimal(string: "5")), 0.5, accuracy: 0.0001)
+        XCTAssertEqual(SidebarLayout.ringFraction(percent: Decimal(string: "-5")), 0.5, accuracy: 0.0001)
+        XCTAssertEqual(SidebarLayout.ringFraction(percent: Decimal(string: "42")), 1)
     }
 
     func testPreferencesStoreDistinguishesMissingAndCorruptData() throws {
@@ -137,6 +249,22 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(frame.origin.x, secondaryVisibleFrame.minX + MainPanelLayout.screenEdgeInset)
         XCTAssertGreaterThanOrEqual(frame.minX, secondaryVisibleFrame.minX)
         XCTAssertLessThanOrEqual(frame.maxX, secondaryVisibleFrame.maxX)
+    }
+
+    func testMainPanelKeepsMenuBarGapWithoutTopInset() {
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        // A status item sitting right under the menu bar anchors the panel top
+        // at `visible.maxY - menuBarGap`; nothing may push it further down.
+        let topY = visible.maxY - MainPanelLayout.menuBarGap
+        let frame = MainPanelLayout.alignedFrame(
+            currentFrame: NSRect(x: 0, y: 0, width: 400, height: 590),
+            anchorX: visible.midX,
+            topY: topY,
+            visibleFrame: visible,
+        )
+
+        XCTAssertEqual(frame.maxY, topY)
+        XCTAssertGreaterThanOrEqual(frame.minY, visible.minY)
     }
 
     func testTickerFreshness() {

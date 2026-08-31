@@ -59,7 +59,7 @@ struct AccountSnapshotView: View {
     }
 }
 
-private struct AccountSummaryView: View {
+struct AccountSummaryView: View {
     var overview: AccountOverview
     var hideBalances: Bool
     var hideLowValueAccounts: Bool
@@ -385,7 +385,7 @@ private struct PositionFieldTile: View {
     }
 }
 
-private struct MissingKeyView: View {
+struct MissingKeyView: View {
     var language: AppLanguage
 
     var body: some View {

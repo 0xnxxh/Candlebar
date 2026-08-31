@@ -34,6 +34,10 @@ enum CopyKey {
     case off
     case pinMainPanel
     case pinMainPanelOff
+    case showSidebar
+    case showAccountRing
+    case sidebarAccount
+    case openMainPanel
     case pixelTheme
     case positions
     case priceDecimals
@@ -154,6 +158,10 @@ enum LocalizedCopy {
         case .off: "OFF"
         case .pinMainPanel: "Keep panel open"
         case .pinMainPanelOff: "Hide panel when clicking outside"
+        case .showSidebar: "Show edge sidebar"
+        case .showAccountRing: "Show account ring in sidebar"
+        case .sidebarAccount: "Account"
+        case .openMainPanel: "Open full panel"
         case .pixelTheme: "PIXEL THEME"
         case .positions: "POSITIONS"
         case .priceDecimals: "PRICE DECIMALS"
@@ -237,6 +245,10 @@ enum LocalizedCopy {
         case .off: "关"
         case .pinMainPanel: "固定主界面"
         case .pinMainPanelOff: "点击外部收回主界面"
+        case .showSidebar: "显示边缘侧边栏"
+        case .showAccountRing: "侧边栏显示账户圆环"
+        case .sidebarAccount: "账户"
+        case .openMainPanel: "打开完整面板"
         case .pixelTheme: "像素主题"
         case .positions: "持仓"
         case .priceDecimals: "价格小数位"

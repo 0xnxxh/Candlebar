@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var outsideLocalClickMonitor: Any?
     private var isMainPanelPresented = false
     private var suppressNextStatusOpenAfterOutsideClose = false
+    private var sidebarController: SidebarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -50,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateStatusLabel(text)
         }
         SettingsWindowPresenter.shared.configure(updater: updaterController.updater)
+        configureSidebar()
         observePreferences()
         QAWindowPresenter.shared.showIfNeeded(store: store)
     }
@@ -74,9 +76,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showMainPanel(from sender: NSStatusBarButton) {
-        guard let mainPanel else { return }
         recordPanelAnchor(from: sender)
-        panelTopY = preferredPanelTopY(from: sender)
+        showMainPanel(
+            anchorX: panelAnchorX,
+            topY: preferredPanelTopY(from: sender),
+            visibleFrame: panelVisibleFrame,
+        )
+    }
+
+    private func showMainPanel(anchorX: CGFloat?, topY: CGFloat?, visibleFrame: NSRect?) {
+        guard let mainPanel else { return }
+        panelAnchorX = anchorX
+        panelTopY = topY
+        panelVisibleFrame = visibleFrame
         mainPanel.setContentSize(MainPanelLayout.size(isExpanded: isMainPanelExpanded))
         alignMainPanelWindow()
         mainPanel.orderFrontRegardless()
@@ -168,7 +180,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .dropFirst()
             .sink { [weak self] preferences in
                 self?.updateOutsideClickMonitors(pinMainPanel: preferences.pinMainPanel)
+                self?.sidebarController?.apply(preferences: preferences)
             }
+    }
+
+    private func configureSidebar() {
+        guard sidebarController == nil else { return }
+        let controller = SidebarController(store: store)
+        controller.onOpenMainPanel = { [weak self] anchorX, topY, visibleFrame in
+            self?.showMainPanel(anchorX: anchorX, topY: topY, visibleFrame: visibleFrame)
+        }
+        sidebarController = controller
+        controller.apply(preferences: store.preferences)
     }
 
     private func updateOutsideClickMonitors(pinMainPanel: Bool? = nil) {

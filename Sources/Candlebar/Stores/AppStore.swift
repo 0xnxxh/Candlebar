@@ -411,6 +411,21 @@ final class AppStore: ObservableObject {
         updatePreferences { $0.pinMainPanel = value }
     }
 
+    func updateShowSidebar(_ value: Bool) {
+        updatePreferences { $0.showSidebar = value }
+    }
+
+    func updateSidebarPlacement(edge: SidebarEdge, verticalPosition: Double) {
+        updatePreferences {
+            $0.sidebarEdge = edge
+            $0.sidebarVerticalPosition = min(max(verticalPosition, 0), 1)
+        }
+    }
+
+    func updateShowAccountRing(_ value: Bool) {
+        updatePreferences { $0.showAccountRing = value }
+    }
+
     func updatePixelTheme(_ value: Bool) {
         updatePreferences { $0.pixelTheme = value }
     }
