@@ -66,25 +66,73 @@ struct SidebarRailView: View {
     private func cell(for item: SidebarItem) -> some View {
         let percent = percent(for: item)
         let isSelected = selectedItemID == item.id
+        let tint = intradayColor(percent)
 
-        return VStack(spacing: SidebarLayout.labelSpacing) {
-            RingGauge(
-                fraction: SidebarLayout.ringFraction(percent: percent),
-                tint: intradayColor(percent),
-                label: shortLabel(for: item),
-                isHighlighted: isSelected,
-            )
-            Text(CandleFormat.percent(percent))
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .foregroundStyle(intradayColor(percent))
+        return VStack(alignment: .leading, spacing: SidebarLayout.rowLineSpacing) {
+            HStack(spacing: 4) {
+                Text(shortLabel(for: item))
+                    .font(.system(size: 11, weight: .black, design: .monospaced))
+                    .foregroundStyle(isSelected ? PixelColors.accent : PixelColors.text)
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                PixelSparkline(values: sparklineValues(for: item), tint: tint)
+            }
+
+            Text(priceText(for: item))
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundStyle(PixelColors.text)
                 .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .frame(height: SidebarLayout.labelHeight)
+                .minimumScaleFactor(0.5)
+
+            HStack(spacing: 4) {
+                Text(CandleFormat.percent(percent))
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Spacer(minLength: 2)
+                Text(marketText(for: item))
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(PixelColors.muted)
+            }
         }
-        .frame(width: SidebarLayout.itemWidth, height: SidebarLayout.itemHeight)
+        .frame(width: SidebarLayout.itemWidth, height: SidebarLayout.itemHeight, alignment: .leading)
         .background(isSelected ? PixelColors.raisedAlt : Color.clear)
         .contentShape(Rectangle())
         .help(helpText(for: item))
+    }
+
+    /// Account value follows the same masking as the rest of the app; a rail
+    /// that leaked balances would defeat `hideBalances`.
+    private func priceText(for item: SidebarItem) -> String {
+        switch item {
+        case let .symbol(symbol):
+            CandleFormat.price(
+                store.tickers[symbol.cacheKey]?.lastPrice,
+                decimalPlaces: store.preferences.priceDecimalPlaces,
+            )
+        case .account:
+            store.preferences.hideBalances
+                ? "****"
+                : CandleFormat.compactPrice(store.accountOverview.usdEstimatedValue)
+        }
+    }
+
+    private func marketText(for item: SidebarItem) -> String {
+        switch item {
+        case let .symbol(symbol): symbol.market.shortName
+        case .account: "USD"
+        }
+    }
+
+    private func sparklineValues(for item: SidebarItem) -> [Decimal] {
+        switch item {
+        case let .symbol(symbol):
+            store.watchlistIntradaySeries[symbol.cacheKey]?.candles.map(\.close) ?? []
+        // The account has no intraday series to plot; the row shows a flat track.
+        case .account:
+            []
+        }
     }
 
     private func percent(for item: SidebarItem) -> Decimal? {
@@ -96,7 +144,7 @@ struct SidebarRailView: View {
 
     private func shortLabel(for item: SidebarItem) -> String {
         switch item {
-        case let .symbol(symbol): symbol.symbol.replacingOccurrences(of: "USDT", with: "").prefix(4).uppercased()
+        case let .symbol(symbol): String(symbol.symbol.replacingOccurrences(of: "USDT", with: "").prefix(6)).uppercased()
         case .account: "ACC"
         }
     }

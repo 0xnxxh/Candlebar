@@ -2,16 +2,16 @@ import AppKit
 import Foundation
 
 enum SidebarLayout {
-    // Mirrors the relay-meter dock strip so both apps park identically.
-    static let itemWidth: CGFloat = 52
-    static let ringDiameter: CGFloat = 34
-    static let labelHeight: CGFloat = 14
-    static let labelSpacing: CGFloat = 4
+    // A row is wide enough to carry a full price instead of an abbreviation:
+    // reading the price is the whole point of the rail.
+    static let itemWidth: CGFloat = 100
+    static let sparklineSize = CGSize(width: 42, height: 13)
+    static let rowLineSpacing: CGFloat = 1
     static let horizontalPadding: CGFloat = 8
     static let railVerticalPadding: CGFloat = 10
-    static let itemSpacing: CGFloat = 12
+    static let itemSpacing: CGFloat = 6
     static var railWidth: CGFloat { itemWidth + horizontalPadding * 2 }
-    static var itemHeight: CGFloat { ringDiameter + labelSpacing + labelHeight }
+    static let itemHeight: CGFloat = 48
 
     /// The rail sits flush against the screen edge; only the bubble keeps a gap.
     static let bubbleGap: CGFloat = 8
@@ -111,12 +111,31 @@ enum SidebarLayout {
         return NSRect(x: clampedX.rounded(), y: y.rounded(), width: width, height: height)
     }
 
-    /// Maps an intraday percent change onto a 0...1 ring fill. ±10% or more
-    /// fills the ring completely.
-    static func ringFraction(percent: Decimal?) -> Double {
-        guard let percent else { return 0 }
-        let magnitude = Double(truncating: percent.magnitude as NSDecimalNumber)
-        guard magnitude.isFinite else { return 0 }
-        return min(magnitude / 10, 1)
+    /// Normalizes closes to 0...1 for the row sparkline. A flat series maps to
+    /// the middle so the line stays visible instead of collapsing onto an edge.
+    static func sparklineNormalized(values: [Decimal]) -> [Double] {
+        let numbers = values
+            .map { Double(truncating: $0 as NSDecimalNumber) }
+            .filter(\.isFinite)
+        guard let low = numbers.min(), let high = numbers.max() else { return [] }
+        let span = high - low
+        guard span > 0 else { return numbers.map { _ in 0.5 } }
+        return numbers.map { ($0 - low) / span }
+    }
+
+    /// Picks the screen the rail belongs to. The remembered display wins; when
+    /// it is unplugged the caller's fallback keeps the rail on screen instead of
+    /// leaving it in the void.
+    static func resolvedScreenIndex(preferredNumber: UInt32?, screenNumbers: [UInt32?]) -> Int? {
+        guard let preferredNumber else { return nil }
+        return screenNumbers.firstIndex(of: preferredNumber)
+    }
+}
+
+extension NSScreen {
+    /// `CGDirectDisplayID` for this screen, used to remember where the rail was
+    /// docked across relaunches and display changes.
+    var displayNumber: UInt32? {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }
 }

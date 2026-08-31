@@ -11,6 +11,9 @@ struct AppPreferences: Codable, Equatable {
     var sidebarEdge: SidebarEdge
     /// Vertical center of the rail as a fraction of the visible frame, 0 = top.
     var sidebarVerticalPosition: Double
+    /// `CGDirectDisplayID` of the screen the rail was last docked to. `nil`
+    /// until the user drags it, and ignored when that display is gone.
+    var sidebarScreenNumber: UInt32?
     var showAccountRing: Bool
     var pixelTheme: Bool
     var priceDecimalPlaces: Int
@@ -29,6 +32,7 @@ struct AppPreferences: Codable, Equatable {
         case showSidebar
         case sidebarEdge
         case sidebarVerticalPosition
+        case sidebarScreenNumber
         case showAccountRing
         case pixelTheme
         case priceDecimalPlaces
@@ -49,6 +53,7 @@ struct AppPreferences: Codable, Equatable {
         showSidebar: Bool,
         sidebarEdge: SidebarEdge,
         sidebarVerticalPosition: Double,
+        sidebarScreenNumber: UInt32?,
         showAccountRing: Bool,
         pixelTheme: Bool,
         priceDecimalPlaces: Int,
@@ -66,6 +71,7 @@ struct AppPreferences: Codable, Equatable {
         self.showSidebar = showSidebar
         self.sidebarEdge = sidebarEdge
         self.sidebarVerticalPosition = sidebarVerticalPosition
+        self.sidebarScreenNumber = sidebarScreenNumber
         self.showAccountRing = showAccountRing
         self.pixelTheme = pixelTheme
         self.priceDecimalPlaces = priceDecimalPlaces
@@ -87,6 +93,7 @@ struct AppPreferences: Codable, Equatable {
         sidebarEdge = try container.decodeIfPresent(SidebarEdge.self, forKey: .sidebarEdge) ?? .right
         let storedPosition = try container.decodeIfPresent(Double.self, forKey: .sidebarVerticalPosition) ?? 0.5
         sidebarVerticalPosition = min(max(storedPosition, 0), 1)
+        sidebarScreenNumber = try container.decodeIfPresent(UInt32.self, forKey: .sidebarScreenNumber)
         showAccountRing = try container.decodeIfPresent(Bool.self, forKey: .showAccountRing) ?? true
         pixelTheme = try container.decode(Bool.self, forKey: .pixelTheme)
         priceDecimalPlaces = try container.decode(Int.self, forKey: .priceDecimalPlaces)
@@ -108,6 +115,7 @@ struct AppPreferences: Codable, Equatable {
         try container.encode(showSidebar, forKey: .showSidebar)
         try container.encode(sidebarEdge, forKey: .sidebarEdge)
         try container.encode(sidebarVerticalPosition, forKey: .sidebarVerticalPosition)
+        try container.encodeIfPresent(sidebarScreenNumber, forKey: .sidebarScreenNumber)
         try container.encode(showAccountRing, forKey: .showAccountRing)
         try container.encode(pixelTheme, forKey: .pixelTheme)
         try container.encode(priceDecimalPlaces, forKey: .priceDecimalPlaces)
@@ -131,6 +139,7 @@ struct AppPreferences: Codable, Equatable {
         showSidebar: false,
         sidebarEdge: .right,
         sidebarVerticalPosition: 0.5,
+        sidebarScreenNumber: nil,
         showAccountRing: true,
         pixelTheme: true,
         priceDecimalPlaces: 2,

@@ -19,6 +19,9 @@ final class SidebarController {
     private var railPanel: NSPanel?
     private var bubblePanel: NSPanel?
     private var selectedIndex: Int?
+    /// The rail panel's frame only identifies a display once it has been laid
+    /// out; before that it still carries its placeholder origin.
+    private var didLayoutRail = false
     private var dragGrabOffset: CGSize?
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
@@ -33,6 +36,9 @@ final class SidebarController {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                // Re-resolve from the remembered display: the old frame may now
+                // point at a screen that was moved or unplugged.
+                self.didLayoutRail = false
                 self.layoutRail(preferences: self.store.preferences)
                 self.hideBubble()
             }
@@ -96,12 +102,13 @@ final class SidebarController {
             verticalPosition: preferences.sidebarVerticalPosition,
         )
         railPanel.setFrame(frame, display: true, animate: false)
+        didLayoutRail = true
     }
 
     // MARK: - Dragging
 
     private func dragRail() {
-        guard let railPanel, let visibleFrame = targetVisibleFrame() else { return }
+        guard let railPanel else { return }
         // Tracked against absolute mouse coordinates. SwiftUI's drag translation
         // is relative to a window that this very gesture is moving, which feeds
         // back into itself and makes the rail jitter.
@@ -116,6 +123,9 @@ final class SidebarController {
             return initial
         }()
 
+        // Clamped against the screen under the pointer, not the rail's current
+        // one, so the rail can be dragged onto another display.
+        guard let visibleFrame = (screen(containing: mouse) ?? targetScreen())?.visibleFrame else { return }
         var frame = railPanel.frame
         frame.origin = NSPoint(x: mouse.x - offset.width, y: mouse.y - offset.height)
         railPanel.setFrameOrigin(SidebarLayout.clampedDragFrame(frame, visibleFrame: visibleFrame).origin)
@@ -123,18 +133,61 @@ final class SidebarController {
 
     private func endRailDrag() {
         defer { dragGrabOffset = nil }
-        guard dragGrabOffset != nil, let railPanel, let visibleFrame = targetVisibleFrame() else { return }
+        guard dragGrabOffset != nil, let railPanel else { return }
         let frame = railPanel.frame
+        guard let screen = screen(bestOverlapping: frame) ?? targetScreen() else { return }
+        let visibleFrame = screen.visibleFrame
         store.updateSidebarPlacement(
             edge: SidebarLayout.resolvedEdge(railCenterX: frame.midX, visibleFrame: visibleFrame),
             verticalPosition: SidebarLayout.verticalPosition(railFrame: frame, visibleFrame: visibleFrame),
+            screenNumber: screen.displayNumber,
         )
         // The preference change re-enters `apply(preferences:)`, which snaps the
         // rail back onto the resolved edge.
     }
 
     private func targetVisibleFrame() -> NSRect? {
-        (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
+        targetScreen()?.visibleFrame
+    }
+
+    /// The screen the rail lives on. `NSScreen.main` follows keyboard focus, so
+    /// using it here would yank the rail onto whatever display the user just
+    /// clicked in. Order: where the rail already is, then the remembered
+    /// display, then the focused one as a last resort.
+    private func targetScreen() -> NSScreen? {
+        let screens = NSScreen.screens
+        if didLayoutRail, let frame = railPanel?.frame, let screen = screen(bestOverlapping: frame) {
+            return screen
+        }
+        if let index = SidebarLayout.resolvedScreenIndex(
+            preferredNumber: store.preferences.sidebarScreenNumber,
+            screenNumbers: screens.map(\.displayNumber),
+        ) {
+            return screens[index]
+        }
+        return NSScreen.main ?? screens.first
+    }
+
+    /// Screen holding the largest slice of `frame`; a rail straddling two
+    /// displays belongs to the one showing most of it.
+    private func screen(bestOverlapping frame: NSRect) -> NSScreen? {
+        var best: NSScreen?
+        var bestArea: CGFloat = 0
+        for screen in NSScreen.screens {
+            let overlap = screen.frame.intersection(frame)
+            guard !overlap.isNull else { continue }
+            let area = overlap.width * overlap.height
+            if area > bestArea {
+                bestArea = area
+                best = screen
+            }
+        }
+        return best
+    }
+
+    /// Screen under the pointer, so a drag can carry the rail across displays.
+    private func screen(containing point: NSPoint) -> NSScreen? {
+        NSScreen.screens.first { $0.frame.contains(point) }
     }
 
     // MARK: - Bubble

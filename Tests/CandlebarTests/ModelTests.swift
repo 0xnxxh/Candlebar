@@ -118,6 +118,14 @@ final class ModelTests: XCTestCase {
         )
     }
 
+    func testSidebarRemembersDockedScreenAndFallsBackWhenUnplugged() {
+        let screens: [UInt32?] = [1, 7, 12]
+
+        XCTAssertEqual(SidebarLayout.resolvedScreenIndex(preferredNumber: 7, screenNumbers: screens), 1)
+        XCTAssertNil(SidebarLayout.resolvedScreenIndex(preferredNumber: 99, screenNumbers: screens))
+        XCTAssertNil(SidebarLayout.resolvedScreenIndex(preferredNumber: nil, screenNumbers: screens))
+    }
+
     func testSidebarBubbleFrameSitsBesideRailOnEitherEdge() {
         let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
         let size = CGSize(width: 330, height: 260)
@@ -152,12 +160,14 @@ final class ModelTests: XCTestCase {
         XCTAssertLessThanOrEqual(clamped.maxY, shortScreen.maxY - SidebarLayout.bubbleGap)
     }
 
-    func testSidebarRingFractionMapsPercentMagnitude() {
-        XCTAssertEqual(SidebarLayout.ringFraction(percent: nil), 0)
-        XCTAssertEqual(SidebarLayout.ringFraction(percent: 0), 0)
-        XCTAssertEqual(SidebarLayout.ringFraction(percent: Decimal(string: "5")), 0.5, accuracy: 0.0001)
-        XCTAssertEqual(SidebarLayout.ringFraction(percent: Decimal(string: "-5")), 0.5, accuracy: 0.0001)
-        XCTAssertEqual(SidebarLayout.ringFraction(percent: Decimal(string: "42")), 1)
+    func testSidebarSparklineNormalizesClosesAndKeepsFlatSeriesVisible() {
+        let rising = SidebarLayout.sparklineNormalized(values: [10, 12, 14].map { Decimal($0) })
+        XCTAssertEqual(rising, [0, 0.5, 1])
+
+        let flat = SidebarLayout.sparklineNormalized(values: [7, 7, 7].map { Decimal($0) })
+        XCTAssertEqual(flat, [0.5, 0.5, 0.5])
+
+        XCTAssertTrue(SidebarLayout.sparklineNormalized(values: []).isEmpty)
     }
 
     func testPreferencesStoreDistinguishesMissingAndCorruptData() throws {

@@ -415,10 +415,11 @@ final class AppStore: ObservableObject {
         updatePreferences { $0.showSidebar = value }
     }
 
-    func updateSidebarPlacement(edge: SidebarEdge, verticalPosition: Double) {
+    func updateSidebarPlacement(edge: SidebarEdge, verticalPosition: Double, screenNumber: UInt32?) {
         updatePreferences {
             $0.sidebarEdge = edge
             $0.sidebarVerticalPosition = min(max(verticalPosition, 0), 1)
+            $0.sidebarScreenNumber = screenNumber
         }
     }
 
