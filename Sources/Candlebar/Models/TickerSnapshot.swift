@@ -1,6 +1,6 @@
 import Foundation
 
-enum FeedStatus: String, Codable {
+enum FeedStatus: String {
     case idle
     case loading
     case live
@@ -10,11 +10,10 @@ enum FeedStatus: String, Codable {
     case error
 }
 
-struct TickerSnapshot: Codable, Equatable {
+struct TickerSnapshot: Equatable {
     var symbol: String
     var market: MarketType
     var lastPrice: Decimal?
-    var priceChangePercent: Decimal?
     var updatedAt: Date?
     var status: FeedStatus
     var message: String?
@@ -25,7 +24,6 @@ struct TickerSnapshot: Codable, Equatable {
             symbol: item.symbol,
             market: item.market,
             lastPrice: nil,
-            priceChangePercent: nil,
             updatedAt: nil,
             status: .loading,
             message: nil,

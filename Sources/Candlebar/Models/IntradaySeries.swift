@@ -1,6 +1,6 @@
 import Foundation
 
-struct IntradayCandle: Codable, Equatable, Identifiable {
+struct IntradayCandle: Equatable, Identifiable {
     var openTime: Date
     var open: Decimal
     var high: Decimal
@@ -10,7 +10,7 @@ struct IntradayCandle: Codable, Equatable, Identifiable {
     var id: Date { openTime }
 }
 
-struct IntradaySeries: Codable, Equatable {
+struct IntradaySeries: Equatable {
     var symbol: String
     var market: MarketType
     var interval: IntradayInterval

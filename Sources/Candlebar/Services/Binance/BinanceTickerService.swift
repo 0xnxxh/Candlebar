@@ -3,7 +3,6 @@ import Foundation
 struct BinanceTickerPayload: Decodable {
     let symbol: String
     let lastPrice: String
-    let priceChangePercent: String
 }
 
 struct BinanceStreamEnvelope: Decodable {
@@ -13,12 +12,10 @@ struct BinanceStreamEnvelope: Decodable {
 struct BinanceMiniTickerPayload: Decodable {
     let symbol: String
     let closePrice: String
-    let openPrice: String
 
     enum CodingKeys: String, CodingKey {
         case symbol = "s"
         case closePrice = "c"
-        case openPrice = "o"
     }
 }
 
@@ -67,7 +64,6 @@ final class BinanceTickerService: @unchecked Sendable {
             symbol: payload.symbol,
             market: item.market,
             lastPrice: Decimal(string: payload.lastPrice),
-            priceChangePercent: Decimal(string: payload.priceChangePercent),
             updatedAt: Date(),
             status: .live,
             message: nil,
@@ -167,7 +163,6 @@ final class BinanceTickerService: @unchecked Sendable {
                 symbol: item.symbol,
                 market: item.market,
                 lastPrice: nil,
-                priceChangePercent: nil,
                 updatedAt: Date(),
                 status: .offline,
                 message: message,
@@ -184,23 +179,14 @@ final class BinanceTickerService: @unchecked Sendable {
             return nil
         }
         let close = Decimal(string: envelope.data.closePrice)
-        let open = Decimal(string: envelope.data.openPrice)
-        let changePercent = percentChange(open: open, close: close)
         return TickerSnapshot(
             symbol: envelope.data.symbol,
             market: market,
             lastPrice: close,
-            priceChangePercent: changePercent,
             updatedAt: Date(),
             status: .live,
             message: nil,
         )
     }
 
-    private func percentChange(open: Decimal?, close: Decimal?) -> Decimal? {
-        guard let open, let close, open != 0 else {
-            return nil
-        }
-        return ((close - open) / open) * 100
-    }
 }

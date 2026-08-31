@@ -24,7 +24,6 @@ final class AppStore: ObservableObject {
     static let qaModeEnabled = ProcessInfo.processInfo.environment["CANDLEBAR_QA_WINDOW"] == "1"
 
     private let preferencesStore: PreferencesStore
-    private let accountSnapshotStore: AccountSnapshotStore
     private let tickerService: BinanceTickerService
     private let klineService: BinanceKlineService
     private let symbolService: BinanceSymbolService
@@ -46,7 +45,6 @@ final class AppStore: ObservableObject {
 
     init(
         preferencesStore: PreferencesStore = PreferencesStore(),
-        accountSnapshotStore: AccountSnapshotStore = AccountSnapshotStore(),
         tickerService: BinanceTickerService = BinanceTickerService(),
         klineService: BinanceKlineService = BinanceKlineService(),
         symbolService: BinanceSymbolService = BinanceSymbolService(),
@@ -54,12 +52,12 @@ final class AppStore: ObservableObject {
         keychainService: KeychainService = KeychainService(),
     ) {
         self.preferencesStore = preferencesStore
-        self.accountSnapshotStore = accountSnapshotStore
         self.tickerService = tickerService
         self.klineService = klineService
         self.symbolService = symbolService
         self.accountService = accountService
         self.keychainService = keychainService
+        UserDefaults.standard.removeObject(forKey: "candlebar.accountSnapshots.v1")
         var loadError: Error?
         var loaded: AppPreferences
         do {
@@ -180,7 +178,6 @@ final class AppStore: ObservableObject {
                                 symbol: item.symbol,
                                 market: item.market,
                                 lastPrice: nil,
-                                priceChangePercent: nil,
                                 updatedAt: nil,
                                 status: .error,
                                 message: error.localizedDescription,
@@ -325,7 +322,7 @@ final class AppStore: ObservableObject {
         }
         apiKeyState = APIKeyState(hasKey: true, statusText: "KEY STORED")
         let overview = await accountService.validate(credentials: credentials)
-        accountOverview = accountOverviewWithSnapshot(overview)
+        accountOverview = overview
     }
 
     func setDefault(_ item: WatchSymbol) {
@@ -468,7 +465,6 @@ final class AppStore: ObservableObject {
     func deleteAPIKey() {
         do {
             try keychainService.delete()
-            accountSnapshotStore.clear()
             loadAPIKeyState()
             accountOverview = .notConfigured
             apiKeyDraft = ""
@@ -522,21 +518,6 @@ final class AppStore: ObservableObject {
         }
         lastPublishedMenuBarLabel = text
         menuBarLabelDidChange?(text)
-    }
-
-    private func accountOverviewWithSnapshot(_ overview: AccountOverview) -> AccountOverview {
-        guard let currentValue = overview.usdEstimatedValue else {
-            return overview
-        }
-        let now = overview.updatedAt ?? Date()
-        do {
-            var history = try accountSnapshotStore.load()
-            history.record(AccountSnapshot(capturedAt: now, usdEstimatedValue: currentValue), now: now)
-            try accountSnapshotStore.save(history)
-        } catch {
-            report(error, context: "Failed to save account snapshot")
-        }
-        return overview
     }
 
     private func report(_ error: Error, context: String) {

@@ -5,7 +5,6 @@ struct ExchangeSymbol: Identifiable, Equatable {
     var market: MarketType
     var baseAsset: String
     var quoteAsset: String
-    var status: String
 
     var id: String {
         "\(market.rawValue):\(symbol)"

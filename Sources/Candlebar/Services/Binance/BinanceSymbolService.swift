@@ -57,7 +57,6 @@ final class BinanceSymbolService: @unchecked Sendable {
             market: market,
             baseAsset: baseAsset,
             quoteAsset: quoteAsset,
-            status: payload.status,
         )
     }
 }

@@ -15,7 +15,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private var statusItem: NSStatusItem?
     private var mainPanel: NSPanel?
-    private var currentPanelSize = MainPanelLayout.collapsedSize
     private var isMainPanelExpanded = false
     private var panelAnchorX: CGFloat?
     private var panelTopY: CGFloat?
@@ -77,9 +76,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showMainPanel(from sender: NSStatusBarButton) {
         guard let mainPanel else { return }
         recordPanelAnchor(from: sender)
-        currentPanelSize = MainPanelLayout.size(isExpanded: isMainPanelExpanded)
         panelTopY = preferredPanelTopY(from: sender)
-        mainPanel.setContentSize(currentPanelSize)
+        mainPanel.setContentSize(MainPanelLayout.size(isExpanded: isMainPanelExpanded))
         alignMainPanelWindow()
         mainPanel.orderFrontRegardless()
         isMainPanelPresented = true
@@ -126,8 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let mainPanel else { return }
         isMainPanelExpanded = isExpanded
         capturePanelTopIfNeeded()
-        currentPanelSize = MainPanelLayout.size(isExpanded: isExpanded)
-        mainPanel.setContentSize(currentPanelSize)
+        mainPanel.setContentSize(MainPanelLayout.size(isExpanded: isExpanded))
         alignMainPanelWindow()
     }
 

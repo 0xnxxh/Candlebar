@@ -1,6 +1,6 @@
 import Foundation
 
-enum PriceMovement: String, Codable, Equatable {
+enum PriceMovement: String, Equatable {
     case up
     case down
     case flat

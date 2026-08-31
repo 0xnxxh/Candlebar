@@ -71,32 +71,6 @@ final class ModelTests: XCTestCase {
         }
     }
 
-    func testAccountSnapshotStoreDistinguishesMissingAndCorruptData() throws {
-        try withTemporaryDefaults { defaults in
-            let store = AccountSnapshotStore(defaults: defaults)
-
-            XCTAssertEqual(try store.load(), .empty)
-
-            defaults.set(Data("not-json".utf8), forKey: "candlebar.accountSnapshots.v1")
-            XCTAssertThrowsError(try store.load())
-        }
-    }
-
-    func testAccountSnapshotStoreRoundTripsAndClears() throws {
-        try withTemporaryDefaults { defaults in
-            let store = AccountSnapshotStore(defaults: defaults)
-            let history = AccountSnapshotHistory(
-                snapshots: [AccountSnapshot(capturedAt: Date(timeIntervalSince1970: 100), usdEstimatedValue: 42)]
-            )
-
-            try store.save(history)
-            XCTAssertEqual(try store.load(), history)
-
-            store.clear()
-            XCTAssertEqual(try store.load(), .empty)
-        }
-    }
-
     func testKeychainReadStatusDistinguishesMissingFromFailure() throws {
         XCTAssertNil(try KeychainService.data(item: nil, status: errSecItemNotFound))
 
@@ -130,7 +104,6 @@ final class ModelTests: XCTestCase {
             symbol: "BTCUSDT",
             market: .spot,
             lastPrice: Decimal(string: "123.45"),
-            priceChangePercent: Decimal(string: "1.2"),
             updatedAt: Date(timeIntervalSince1970: 100),
             status: .live,
             message: nil,
@@ -171,7 +144,6 @@ final class ModelTests: XCTestCase {
             symbol: "BTCUSDT",
             market: .spot,
             lastPrice: 100,
-            priceChangePercent: 1,
             updatedAt: Date(timeIntervalSince1970: 100),
             status: .live,
             message: nil,
@@ -753,7 +725,6 @@ final class ModelTests: XCTestCase {
             market: .spot,
             baseAsset: "BTC",
             quoteAsset: "USDT",
-            status: "TRADING",
         )
 
         XCTAssertTrue(symbol.matches("btc"))
@@ -771,7 +742,6 @@ final class ModelTests: XCTestCase {
                     symbol: "BTCUSDT",
                     market: .spot,
                     lastPrice: 100,
-                    priceChangePercent: 1,
                     updatedAt: Date(timeIntervalSince1970: 90),
                     status: .live,
                     message: nil,
@@ -794,16 +764,6 @@ final class ModelTests: XCTestCase {
         XCTAssertLessThan(AppVersion("v0.1.0"), AppVersion("0.1.1"))
         XCTAssertLessThan(AppVersion("1.9.9"), AppVersion("1.10.0"))
         XCTAssertEqual(AppVersion("1.2"), AppVersion("1.2.0"))
-    }
-
-    func testAccountSnapshotHistoryFinds24hBaseline() {
-        let now = Date(timeIntervalSince1970: 48 * 60 * 60)
-        var history = AccountSnapshotHistory.empty
-        history.record(AccountSnapshot(capturedAt: now.addingTimeInterval(-26 * 60 * 60), usdEstimatedValue: 90), now: now)
-        history.record(AccountSnapshot(capturedAt: now.addingTimeInterval(-24 * 60 * 60), usdEstimatedValue: 100), now: now)
-        history.record(AccountSnapshot(capturedAt: now.addingTimeInterval(-1 * 60 * 60), usdEstimatedValue: 110), now: now)
-
-        XCTAssertEqual(history.baseline24h(now: now)?.usdEstimatedValue, 100)
     }
 
     private func withTemporaryDefaults(_ body: (UserDefaults) throws -> Void) throws {
