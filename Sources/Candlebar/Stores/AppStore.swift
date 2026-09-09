@@ -33,6 +33,8 @@ final class AppStore: ObservableObject {
     private var symbolCatalog: [MarketType: [ExchangeSymbol]] = [:]
     private var refreshTask: Task<Void, Never>?
     private var accountRefreshTask: Task<Void, Never>?
+    private var isRefreshingAccount = false
+    private var accountRevision = 0
     private var streamTask: Task<Void, Never>?
     private var intradayTask: Task<Void, Never>?
     private var freshnessTask: Task<Void, Never>?
@@ -301,6 +303,10 @@ final class AppStore: ObservableObject {
     }
 
     func refreshAccount() async {
+        guard !isRefreshingAccount else { return }
+        isRefreshingAccount = true
+        let revision = accountRevision
+        defer { isRefreshingAccount = false }
         guard !Self.qaModeEnabled else {
             apiKeyState = .missing
             accountOverview = .notConfigured
@@ -322,6 +328,7 @@ final class AppStore: ObservableObject {
         }
         apiKeyState = APIKeyState(hasKey: true, statusText: "KEY STORED")
         let overview = await accountService.validate(credentials: credentials)
+        guard revision == accountRevision else { return }
         accountOverview = overview
     }
 
@@ -466,6 +473,8 @@ final class AppStore: ObservableObject {
     func saveAPIKey(apiKey: String, secret: String) {
         do {
             try keychainService.save(credentials: StoredAPIKey(apiKey: apiKey, secret: secret))
+            accountRevision += 1
+            accountOverview = .notConfigured
             loadAPIKeyState()
             apiSecretDraft = ""
             Task { await refreshAccount() }
@@ -481,6 +490,7 @@ final class AppStore: ObservableObject {
     func deleteAPIKey() {
         do {
             try keychainService.delete()
+            accountRevision += 1
             loadAPIKeyState()
             accountOverview = .notConfigured
             apiKeyDraft = ""

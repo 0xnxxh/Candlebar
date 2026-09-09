@@ -4,6 +4,20 @@ import XCTest
 @testable import Candlebar
 
 final class ModelTests: XCTestCase {
+    private var baselineSuite = ""
+    private var baselineDefaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        baselineSuite = "CandlebarModelTests.\(UUID().uuidString)"
+        baselineDefaults = UserDefaults(suiteName: baselineSuite)!
+    }
+
+    override func tearDown() {
+        baselineDefaults.removePersistentDomain(forName: baselineSuite)
+        super.tearDown()
+    }
+
     func testWatchSymbolNormalization() {
         XCTAssertEqual(" btc/usdt ".normalizedSymbol, "BTCUSDT")
         XCTAssertEqual("eth-usdt".normalizedSymbol, "ETHUSDT")
@@ -510,70 +524,6 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(values["limit"], "24")
     }
 
-    func testDailySnapshotQueryUsesCompletedBinanceDayWindow() {
-        let service = BinanceAccountService()
-        let now = Int64(1_782_892_601_000)
-        let items = service.dailySnapshotQueryItems(type: "SPOT", now: now)
-        let values = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
-
-        XCTAssertEqual(values["type"], "SPOT")
-        XCTAssertEqual(values["startTime"], "1782259200000")
-        XCTAssertEqual(values["endTime"], "1782864000000")
-        XCTAssertEqual(values["limit"], "7")
-    }
-
-    func testDailyAccountChangeUsesPreviousCompletedUTCDay() {
-        let service = BinanceAccountService()
-        let dayStart = Int64(1_782_864_000_000)
-        let spotSnapshot = DailyAccountSnapshotPayload(
-            code: 200,
-            snapshotVos: [
-                DailyAccountSnapshot(
-                    data: DailyAccountSnapshotData(
-                        balances: [DailySpotBalancePayload(asset: "USDT", free: "100", locked: "0")],
-                        assets: nil,
-                    ),
-                    updateTime: dayStart - 86_400_000,
-                ),
-                DailyAccountSnapshot(
-                    data: DailyAccountSnapshotData(
-                        balances: [DailySpotBalancePayload(asset: "USDT", free: "125", locked: "0")],
-                        assets: nil,
-                    ),
-                    updateTime: dayStart,
-                ),
-            ],
-        )
-        let futuresSnapshot = DailyAccountSnapshotPayload(
-            code: 200,
-            snapshotVos: [
-                DailyAccountSnapshot(
-                    data: DailyAccountSnapshotData(
-                        balances: nil,
-                        assets: [DailyFuturesAssetPayload(asset: "USDT", walletBalance: "200")],
-                    ),
-                    updateTime: dayStart - 86_400_000,
-                ),
-                DailyAccountSnapshot(
-                    data: DailyAccountSnapshotData(
-                        balances: nil,
-                        assets: [DailyFuturesAssetPayload(asset: "USDT", walletBalance: "225")],
-                    ),
-                    updateTime: dayStart,
-                ),
-            ],
-        )
-
-        let change = service.dailyAccountChange(
-            spotSnapshot: spotSnapshot,
-            futuresSnapshot: futuresSnapshot,
-            dayStart: dayStart,
-        )
-
-        XCTAssertEqual(change?.change, Decimal(50))
-        XCTAssertEqual(change?.percent, Decimal(string: "16.66666666666666666666666666666666666667"))
-    }
-
     func testIncomeHistoryQueryItemsUseSymbolTypeAndWindow() {
         let service = BinanceAccountService()
         let items = service.incomeHistoryQueryItems(
@@ -595,7 +545,7 @@ final class ModelTests: XCTestCase {
         MockURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
-        let service = BinanceAccountService(session: URLSession(configuration: configuration))
+        let service = BinanceAccountService(session: URLSession(configuration: configuration), baselineStore: AccountBaselineStore(defaults: baselineDefaults))
 
         MockURLProtocol.handler = { request in
             let url = try XCTUnwrap(request.url)
@@ -607,10 +557,8 @@ final class ModelTests: XCTestCase {
             switch components.path {
             case "/api/v3/time":
                 body = #"{"serverTime":1782892601000}"#
-            case "/api/v3/account":
-                body = #"{"balances":[]}"#
-            case "/fapi/v3/account":
-                body = #"{"totalWalletBalance":"100","totalUnrealizedProfit":"0"}"#
+            case "/sapi/v1/asset/wallet/balance":
+                body = #"[{"walletName":"Spot","balance":"100","activate":true}]"#
             case "/fapi/v3/positionRisk":
                 body = """
                 [{
@@ -629,12 +577,8 @@ final class ModelTests: XCTestCase {
                 """
             case "/fapi/v1/symbolConfig":
                 body = #"[{"symbol":"BTCUSDT","leverage":5}]"#
-            case "/dapi/v1/account":
-                body = #"{"totalWalletBalance":"0","totalUnrealizedProfit":"0"}"#
             case "/dapi/v1/positionRisk":
                 body = #"[]"#
-            case "/sapi/v1/accountSnapshot":
-                body = #"{"code":200,"snapshotVos":[]}"#
             case "/fapi/v1/income":
                 XCTAssertEqual(query["symbol"], "BTCUSDT")
                 XCTAssertEqual(query["startTime"], "1775116601000")
@@ -671,11 +615,152 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(MockURLProtocol.recordedIncomeTypes, ["COMMISSION", "FUNDING_FEE", "REALIZED_PNL"])
     }
 
+    func testAccountTotalIncludesEveryWalletInBinanceOverview() async {
+        MockURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let service = BinanceAccountService(session: URLSession(configuration: configuration), baselineStore: AccountBaselineStore(defaults: baselineDefaults))
+        MockURLProtocol.handler = { request in
+            if request.url?.path == "/sapi/v1/asset/wallet/balance" {
+                let url = try XCTUnwrap(request.url)
+                let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
+                XCTAssertEqual(query?.first { $0.name == "quoteAsset" }?.value, "USDT")
+                XCTAssertEqual(request.httpMethod, "GET")
+                let body = #"[{"activate":true,"walletName":"Spot","balance":"1000"},{"activate":true,"walletName":"Funding","balance":"200"},{"activate":true,"walletName":"Earn","balance":"3000"},{"activate":true,"walletName":"USDⓈ-M Futures","balance":"400"},{"activate":true,"walletName":"COIN-M Futures","balance":"500"},{"activate":false,"walletName":"Options","balance":"0"},{"activate":true,"walletName":"New Wallet","balance":"6.25"}]"#
+                return (HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+            }
+            return try Self.incomeStubHandler(request)
+        }
+
+        let overview = await service.validate(credentials: StoredAPIKey(apiKey: "wallet-test-key", secret: "secret"))
+
+        XCTAssertEqual(overview.usdEstimatedValue, Decimal(string: "5106.25"))
+        XCTAssertEqual(overview.usdtChange, 0)
+        XCTAssertEqual(overview.changeBasis, .observation, "A midday baseline must not be labelled Today")
+    }
+
+    func testWalletOverviewFailureDoesNotPublishPartialSumAsTotal() async {
+        MockURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let service = BinanceAccountService(session: URLSession(configuration: configuration), baselineStore: AccountBaselineStore(defaults: baselineDefaults))
+        MockURLProtocol.handler = { request in
+            if request.url?.path == "/sapi/v1/asset/wallet/balance" {
+                let url = try XCTUnwrap(request.url)
+                return (HTTPURLResponse(url: url, statusCode: 403, httpVersion: nil, headerFields: nil)!, Data("{}".utf8))
+            }
+            return try Self.incomeStubHandler(request)
+        }
+
+        let overview = await service.validate(credentials: StoredAPIKey(apiKey: "wallet-test-key", secret: "secret"))
+
+        XCTAssertNil(overview.usdEstimatedValue)
+        XCTAssertNil(overview.usdtChange)
+        XCTAssertNotEqual(overview.status, .live)
+    }
+
+    func testWalletChangesRefreshAgainstPersistedMidnightBaseline() async throws {
+        try await assertWalletChanges(baselineTime: 1_782_864_000_000, basis: .utcMidnight)
+    }
+
+    func testWalletChangesRefreshAgainstPersistedDaytimeObservation() async throws {
+        try await assertWalletChanges(baselineTime: 1_782_864_000_000 + 3_600_000, basis: .observation)
+    }
+
+    private func assertWalletChanges(baselineTime: Int64, basis: AccountChangeBasis) async throws {
+        MockURLProtocol.reset()
+        let suite = "CandlebarWalletTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let baselineStore = AccountBaselineStore(defaults: defaults)
+        _ = try baselineStore.baseline(
+            wallets: [AccountWallet(name: "Spot", value: 80)],
+            apiKey: "key", now: baselineTime,
+        )
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let service = BinanceAccountService(session: URLSession(configuration: configuration), baselineStore: baselineStore)
+        MockURLProtocol.handler = Self.incomeStubHandler
+
+        let first = await service.validate(credentials: StoredAPIKey(apiKey: "key", secret: "secret"))
+        XCTAssertEqual(first.usdtChange, 20)
+        XCTAssertEqual(first.usdtChangePercent, 25)
+        XCTAssertEqual(first.wallets.first?.change, 20)
+        XCTAssertEqual(first.changeBasis, basis)
+
+        MockURLProtocol.handler = { request in
+            if request.url?.path == "/sapi/v1/asset/wallet/balance" {
+                let url = try XCTUnwrap(request.url)
+                let body = #"[{"walletName":"Spot","balance":"60","activate":true}]"#
+                return (HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+            }
+            return try Self.incomeStubHandler(request)
+        }
+        let second = await service.validate(credentials: StoredAPIKey(apiKey: "key", secret: "secret"))
+        XCTAssertEqual(second.usdtChange, -20)
+        XCTAssertEqual(second.usdtChangePercent, -25)
+        XCTAssertEqual(second.wallets.first?.change, -20)
+        XCTAssertEqual(second.changeBaselineAt, first.changeBaselineAt)
+        XCTAssertEqual(second.changeBasis, basis)
+    }
+
+    func testMalformedOrEmptyWalletResponsesDoNotSilentlyBecomeZero() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        for body in [
+            "[]",
+            #"[{"walletName":"Spot","balance":"bad","activate":true}]"#,
+            #"[{"walletName":"Spot","balance":"10 USDT","activate":true}]"#,
+            #"[{"walletName":"Spot","balance":"1","activate":true},{"walletName":"Spot","balance":"2","activate":true}]"#,
+        ] {
+            MockURLProtocol.reset()
+            MockURLProtocol.handler = { request in
+                if request.url?.path == "/sapi/v1/asset/wallet/balance" {
+                    let url = try XCTUnwrap(request.url)
+                    return (HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data(body.utf8))
+                }
+                return try Self.incomeStubHandler(request)
+            }
+            let service = BinanceAccountService(session: URLSession(configuration: configuration), baselineStore: AccountBaselineStore(defaults: baselineDefaults))
+            let overview = await service.validate(credentials: StoredAPIKey(apiKey: "key", secret: "secret"))
+            XCTAssertNil(overview.usdEstimatedValue)
+            XCTAssertEqual(overview.status, .error)
+        }
+    }
+
+    @MainActor
+    func testSummaryRowsUseDailyChangesAndKeepEmptiedWalletVisible() {
+        var overview = AccountOverview.notConfigured
+        overview.usdEstimatedValue = 200
+        overview.usdtChange = 10
+        overview.usdtChangePercent = 5
+        overview.wallets = [
+            AccountWallet(name: "Spot", value: 0, change: -100),
+            AccountWallet(name: "Earn", value: 200, change: 110),
+            AccountWallet(name: "Funding", value: 0, change: 0),
+        ]
+        let view = AccountSummaryView(overview: overview, hideBalances: false, hideLowValueAccounts: true, language: .chinese, decimalPlaces: 2)
+        XCTAssertEqual(view.rows.map(\.title), ["总计", "现货", "理财"])
+        XCTAssertEqual(view.rows.map(\.change), [10, -100, 110])
+        overview.usdtChange = nil
+        overview.wallets = [AccountWallet(name: "Spot", value: 10)]
+        let missing = AccountSummaryView(overview: overview, hideBalances: false, hideLowValueAccounts: true, language: .english, decimalPlaces: 2)
+        XCTAssertNil(missing.rows[1].change)
+    }
+
+    func testObservationLabelsNeverClaimFullDayChange() {
+        let date = Date(timeIntervalSince1970: 1_782_864_000 + 3600)
+        XCTAssertEqual(LocalizedCopy.accountChangeColumns(.observation, language: .chinese), "余额 / 观察以来变化 · USDT")
+        XCTAssertTrue(LocalizedCopy.accountBaselineText(date, basis: .observation, language: .chinese).contains("非完整今日变化"))
+        XCTAssertTrue(LocalizedCopy.accountBaselineText(date, basis: .observation, language: .english).contains("Since 01:00:00 UTC"))
+        XCTAssertEqual(LocalizedCopy.accountChangeColumns(.utcMidnight, language: .chinese), "余额 / 今日变化 (UTC) · USDT")
+    }
+
     func testRepeatedAccountRefreshOnlyRefetchesIncomeOverlapWindow() async {
         MockURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
-        let service = BinanceAccountService(session: URLSession(configuration: configuration))
+        let service = BinanceAccountService(session: URLSession(configuration: configuration), baselineStore: AccountBaselineStore(defaults: baselineDefaults))
         MockURLProtocol.handler = Self.incomeStubHandler
 
         let first = await service.validate(credentials: StoredAPIKey(apiKey: "key", secret: "secret"))
@@ -693,7 +778,7 @@ final class ModelTests: XCTestCase {
         MockURLProtocol.reset()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockURLProtocol.self]
-        let service = BinanceAccountService(session: URLSession(configuration: configuration))
+        let service = BinanceAccountService(session: URLSession(configuration: configuration), baselineStore: AccountBaselineStore(defaults: baselineDefaults))
         MockURLProtocol.handler = Self.incomeStubHandler
 
         _ = await service.validate(credentials: StoredAPIKey(apiKey: "key", secret: "secret"))
@@ -701,6 +786,47 @@ final class ModelTests: XCTestCase {
 
         XCTAssertEqual(overview.positions.first?.realizedPnL, Decimal(string: "309.63"))
         XCTAssertEqual(overview.positions.first?.fundingFee, Decimal(string: "-29.62"))
+    }
+
+    func testChangingAccountDoesNotReuseAnotherAccountsIncomeCache() async {
+        MockURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let service = BinanceAccountService(session: URLSession(configuration: configuration), baselineStore: AccountBaselineStore(defaults: baselineDefaults))
+        MockURLProtocol.handler = Self.incomeStubHandler
+        _ = await service.validate(credentials: StoredAPIKey(apiKey: "first", secret: "secret"))
+        let firstCount = MockURLProtocol.recordedIncomeStartTimes.count
+        MockURLProtocol.handler = { request in
+            if request.url?.path == "/fapi/v1/income" {
+                let url = try XCTUnwrap(request.url)
+                let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                MockURLProtocol.record(url: url, query: Dictionary(uniqueKeysWithValues: query.map { ($0.name, $0.value ?? "") }))
+                return (HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data("[]".utf8))
+            }
+            return try Self.incomeStubHandler(request)
+        }
+        let second = await service.validate(credentials: StoredAPIKey(apiKey: "second", secret: "secret"))
+        XCTAssertEqual(second.positions.first?.realizedPnL, 0)
+        XCTAssertEqual(Set(MockURLProtocol.recordedIncomeStartTimes.dropFirst(firstCount)), ["1775116601000"])
+    }
+
+    func testSigningClockAdvancesDuringSequentialAccountRequests() async {
+        MockURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let service = BinanceAccountService(session: URLSession(configuration: configuration), baselineStore: AccountBaselineStore(defaults: baselineDefaults))
+        MockURLProtocol.handler = { request in
+            if request.url?.path == "/sapi/v1/asset/wallet/balance" {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            if request.url?.path == "/fapi/v3/positionRisk" {
+                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+                let timestamp = query?.first { $0.name == "timestamp" }?.value.flatMap(Int64.init)
+                XCTAssertGreaterThanOrEqual(timestamp ?? 0, 1_782_892_601_050)
+            }
+            return try Self.incomeStubHandler(request)
+        }
+        _ = await service.validate(credentials: StoredAPIKey(apiKey: "key", secret: "secret"))
     }
 
     private static let incomeStubHandler: @Sendable (URLRequest) throws -> (HTTPURLResponse, Data) = { request in
@@ -713,20 +839,14 @@ final class ModelTests: XCTestCase {
         switch components.path {
         case "/api/v3/time":
             body = #"{"serverTime":1782892601000}"#
-        case "/api/v3/account":
-            body = #"{"balances":[]}"#
-        case "/fapi/v3/account":
-            body = #"{"totalWalletBalance":"100","totalUnrealizedProfit":"0"}"#
+        case "/sapi/v1/asset/wallet/balance":
+            body = #"[{"walletName":"Spot","balance":"100","activate":true}]"#
         case "/fapi/v3/positionRisk":
             body = #"[{"symbol":"BTCUSDT","positionAmt":"1","markPrice":"110","unRealizedProfit":"10"}]"#
         case "/fapi/v1/symbolConfig":
             body = #"[{"symbol":"BTCUSDT","leverage":5}]"#
-        case "/dapi/v1/account":
-            body = #"{"totalWalletBalance":"0","totalUnrealizedProfit":"0"}"#
         case "/dapi/v1/positionRisk":
             body = #"[]"#
-        case "/sapi/v1/accountSnapshot":
-            body = #"{"code":200,"snapshotVos":[]}"#
         case "/fapi/v1/income":
             switch query["incomeType"] {
             case "REALIZED_PNL":

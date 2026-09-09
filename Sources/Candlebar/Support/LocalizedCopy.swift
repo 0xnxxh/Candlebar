@@ -67,12 +67,15 @@ enum CopyKey {
     case positionSummaryHelp
     case positionSize
     case positionUnrealizedPnL
-    case summaryCoinM
-    case summaryPreviousDayUnavailable
-    case summarySpot
+    case summaryColumns
+    case summaryObservationColumns
+    case summaryUnavailableColumns
+    case summaryObservedShort
+    case summaryTodayShort
+    case summaryWalletHelp
+    case summaryBaselineUnavailable
     case summaryTotalHelp
     case summaryTotal
-    case summaryUsdM
     case defaultRow
     case setDefault
     case moveUp
@@ -84,6 +87,48 @@ enum CopyKey {
 }
 
 enum LocalizedCopy {
+    static func walletName(_ name: String, language: AppLanguage) -> String {
+        guard language == .chinese else { return name }
+        switch name {
+        case "Spot": return "现货"
+        case "Funding": return "资金"
+        case "Earn": return "理财"
+        case "USDⓈ-M Futures", "USD-M Futures": return "U 本位合约"
+        case "COIN-M Futures": return "币本位合约"
+        case "Cross Margin": return "全仓杠杆"
+        case "Isolated Margin": return "逐仓杠杆"
+        case "Options": return "期权"
+        case "Trading Bots": return "交易机器人"
+        case "Copy Trading": return "跟单交易"
+        default: return name
+        }
+    }
+
+    static func accountChangeColumns(_ basis: AccountChangeBasis?, language: AppLanguage) -> String {
+        switch basis {
+        case .utcMidnight: text(.summaryColumns, language: language)
+        case .observation: text(.summaryObservationColumns, language: language)
+        case nil: text(.summaryUnavailableColumns, language: language)
+        }
+    }
+
+    static func accountBaselineText(_ date: Date?, basis: AccountChangeBasis?, language: AppLanguage) -> String {
+        guard let date, let basis else { return text(.summaryBaselineUnavailable, language: language) }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "HH:mm:ss"
+        let time = formatter.string(from: date)
+        if basis == .observation {
+            return language == .chinese
+                ? "自 UTC \(time) 起观察，非完整今日变化；含充提。"
+                : "Since \(time) UTC, not a full day; includes deposits/withdrawals."
+        }
+        return language == .chinese
+            ? "日初近似基准：UTC \(time) 采样，含充提影响。"
+            : "Approx. midnight baseline: \(time) UTC; includes deposits/withdrawals."
+    }
+
     static func text(_ key: CopyKey, language: AppLanguage) -> String {
         switch language {
         case .english:
@@ -192,13 +237,16 @@ enum LocalizedCopy {
             "Realized PnL is the 90-day sum of realized PnL, funding fees, and commissions from Binance futures income history. Funding shows funding fees only."
         case .positionSize: "SIZE"
         case .positionUnrealizedPnL: "UPNL"
-        case .summaryCoinM: "COIN-M"
-        case .summaryPreviousDayUnavailable: "PREV DAY N/A"
-        case .summarySpot: "Spot"
+        case .summaryColumns: "BALANCE / TODAY (UTC) · USDT"
+        case .summaryObservationColumns: "BALANCE / SINCE OBSERVATION · USDT"
+        case .summaryUnavailableColumns: "BALANCE / CHANGE · USDT"
+        case .summaryObservedShort: "OBS"
+        case .summaryTodayShort: "TODAY"
+        case .summaryWalletHelp: "Binance wallet value in USDT / change since the displayed baseline. Includes transfers; this is not unrealized PnL."
+        case .summaryBaselineUnavailable: "Change unavailable: waiting for comparable wallet data."
         case .summaryTotalHelp:
-            "Total = spot stablecoin estimate plus USD-M wallet balance. Change shows the completed previous UTC day from yesterday 00:00 to today 00:00 when Binance daily account snapshots are available. COIN-M is not mixed into this USD estimate."
+            "Total sums all Binance wallet estimates in USDT. Change = current value minus the displayed baseline, including deposits and withdrawals. A sample within the first UTC minute enables approximate Today change; otherwise Since Observation starts at the first successful refresh of the day. The baseline survives restarts that day. Percentage = change / positive baseline × 100. Unavailable or incomparable data shows --."
         case .summaryTotal: "Total"
-        case .summaryUsdM: "USD-M"
         case .defaultRow: "DEFAULT"
         case .setDefault: "Set default"
         case .moveUp: "Move up"
@@ -279,13 +327,16 @@ enum LocalizedCopy {
             "已实现盈亏为最近 90 天 Binance 合约收入历史中的平仓盈亏、资金费和手续费合计。资金费仅显示资金费。"
         case .positionSize: "仓位"
         case .positionUnrealizedPnL: "未实现盈亏"
-        case .summaryCoinM: "币本位合约"
-        case .summaryPreviousDayUnavailable: "昨日无基线"
-        case .summarySpot: "现货"
+        case .summaryColumns: "余额 / 今日变化 (UTC) · USDT"
+        case .summaryObservationColumns: "余额 / 观察以来变化 · USDT"
+        case .summaryUnavailableColumns: "余额 / 变化 · USDT"
+        case .summaryObservedShort: "观察"
+        case .summaryTodayShort: "今日"
+        case .summaryWalletHelp: "Binance 钱包 USDT 估值 / 相对标明起始时间的资产变化，包含划转影响。此处不表示未实现盈亏。"
+        case .summaryBaselineUnavailable: "变化暂不可用，等待可比较的钱包数据。"
         case .summaryTotalHelp:
-            "总计为现货稳定币估值加 U 本位合约钱包余额。涨跌显示已完成的上一 UTC 日，即昨天 00:00 到今天 00:00；需要 Binance 每日账户快照可用。币本位不混入此 USD 估值。"
+            "总计汇总 Binance 返回的全部钱包 USDT 估值。变化 = 当前估值 − 标明时间的基准，包含充提影响。UTC 首分钟采样可用于近似今日变化；否则从当日首次成功刷新开始计算观察以来变化。同日重启保留基准。百分比 = 变化 / 正数基准 × 100。数据不可用或无法比较时显示 --。"
         case .summaryTotal: "总计"
-        case .summaryUsdM: "U 本位合约"
         case .defaultRow: "默认"
         case .setDefault: "设为默认"
         case .moveUp: "上移"

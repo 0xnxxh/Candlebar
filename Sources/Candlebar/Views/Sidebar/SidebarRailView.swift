@@ -121,7 +121,7 @@ struct SidebarRailView: View {
     private func marketText(for item: SidebarItem) -> String {
         switch item {
         case let .symbol(symbol): symbol.market.shortName
-        case .account: "USD"
+        case .account: LocalizedCopy.text(store.accountOverview.changeBasis == .observation ? .summaryObservedShort : .summaryTodayShort, language: store.preferences.language)
         }
     }
 
@@ -138,7 +138,7 @@ struct SidebarRailView: View {
     private func percent(for item: SidebarItem) -> Decimal? {
         switch item {
         case let .symbol(symbol): store.watchlistIntradayPercent(for: symbol)
-        case .account: store.accountOverview.usdEstimatedChangePercentToday
+        case .account: store.accountOverview.usdtChangePercent
         }
     }
 
@@ -152,7 +152,7 @@ struct SidebarRailView: View {
     private func helpText(for item: SidebarItem) -> String {
         switch item {
         case let .symbol(symbol): "\(symbol.symbol) · \(symbol.market.shortName)"
-        case .account: LocalizedCopy.text(.sidebarAccount, language: store.preferences.language)
+        case .account: LocalizedCopy.accountBaselineText(store.accountOverview.changeBaselineAt, basis: store.accountOverview.changeBasis, language: store.preferences.language)
         }
     }
 }

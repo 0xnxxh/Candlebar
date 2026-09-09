@@ -24,7 +24,7 @@ struct SidebarBubbleView: View {
     private var accent: Color {
         switch item {
         case let .symbol(symbol): intradayColor(store.watchlistIntradayPercent(for: symbol))
-        case .account: intradayColor(store.accountOverview.usdEstimatedChangePercentToday)
+        case .account: intradayColor(store.accountOverview.usdtChangePercent)
         }
     }
 

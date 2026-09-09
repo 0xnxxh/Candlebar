@@ -76,7 +76,6 @@ struct MainPanelView: View {
                 panelContent
                     .frame(maxWidth: .infinity, alignment: .top)
             }
-            .scrollDisabled(!isAccountExpanded)
             .scrollIndicators(.hidden)
             .frame(maxHeight: isAccountExpanded ? MainPanelLayout.expandedContentMaxHeight : nil)
 

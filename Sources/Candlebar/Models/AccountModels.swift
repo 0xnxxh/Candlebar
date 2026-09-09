@@ -19,13 +19,11 @@ struct AccountOverview: Equatable {
     var status: FeedStatus
     var statusText: String
     var usdEstimatedValue: Decimal?
-    var usdEstimatedChangeToday: Decimal?
-    var usdEstimatedChangePercentToday: Decimal?
-    var spotEstimatedValue: Decimal?
-    var usdMWalletBalance: Decimal?
-    var usdMUnrealizedPnL: Decimal?
-    var coinMWalletBalance: Decimal?
-    var coinMUnrealizedPnL: Decimal?
+    var usdtChange: Decimal?
+    var usdtChangePercent: Decimal?
+    var wallets: [AccountWallet] = []
+    var changeBaselineAt: Date? = nil
+    var changeBasis: AccountChangeBasis? = nil
     var positions: [FuturesPosition]
     var updatedAt: Date?
     var message: String?
@@ -34,13 +32,8 @@ struct AccountOverview: Equatable {
         status: .idle,
         statusText: "READ-ONLY KEY NEEDED",
         usdEstimatedValue: nil,
-        usdEstimatedChangeToday: nil,
-        usdEstimatedChangePercentToday: nil,
-        spotEstimatedValue: nil,
-        usdMWalletBalance: nil,
-        usdMUnrealizedPnL: nil,
-        coinMWalletBalance: nil,
-        coinMUnrealizedPnL: nil,
+        usdtChange: nil,
+        usdtChangePercent: nil,
         positions: [],
         updatedAt: nil,
         message: nil,
@@ -51,18 +44,25 @@ struct AccountOverview: Equatable {
             status: .error,
             statusText: "ACCOUNT CHECK FAILED",
             usdEstimatedValue: nil,
-            usdEstimatedChangeToday: nil,
-            usdEstimatedChangePercentToday: nil,
-            spotEstimatedValue: nil,
-            usdMWalletBalance: nil,
-            usdMUnrealizedPnL: nil,
-            coinMWalletBalance: nil,
-            coinMUnrealizedPnL: nil,
+            usdtChange: nil,
+            usdtChangePercent: nil,
             positions: [],
             updatedAt: Date(),
             message: message,
         )
     }
+}
+
+enum AccountChangeBasis {
+    case utcMidnight
+    case observation
+}
+
+struct AccountWallet: Identifiable, Equatable, Codable {
+    var id: String { name }
+    var name: String
+    var value: Decimal
+    var change: Decimal? = nil
 }
 
 struct FuturesPosition: Identifiable, Equatable {

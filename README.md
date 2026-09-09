@@ -48,6 +48,18 @@ When creating a Binance API key, keep trading, withdrawal, transfer, and key-man
 
 You can also use Candlebar without an API key. Price watching works without account access.
 
+## Account totals and daily change
+
+Total uses Binance's read-only [`GET /sapi/v1/asset/wallet/balance`](https://developers.binance.com/docs/wallet/asset/query-user-wallet-balance) with `quoteAsset=USDT`. It sums every wallet returned, including Spot (all assets), Funding, Earn, USD-M, COIN-M, margin and other wallets. Rows use the same Binance estimates; separate futures unrealized PnL is not added again. This is an estimate in **USDT**, not USD, and may differ from the website due to valuation timing or Binance API coverage.
+
+Summary rows show balance and asset change from the displayed starting time, including deposits, withdrawals and transfers. Internal transfers cancel out in the total. Percentage is change divided by the positive baseline, multiplied by 100; it is unavailable for a zero/negative baseline. Position unrealized PnL remains in position details.
+
+If the day's first complete wallet response arrives within **00:00:00–00:00:59 UTC** (08:00 in Singapore/China), it is an approximate midnight baseline and the column reads **Today (UTC)**. Otherwise, tracking begins with the first successful refresh and the column reads **Since Observation**, with the starting time explicitly shown. The first sample has zero change; subsequent refreshes compare against that same sample rather than resetting it. Since Observation is not a full-day change.
+
+The current day's sample is stored locally across restarts, scoped to a hash of the API key; credentials are not stored with it. A new UTC day starts a new baseline using the same rules. Changed wallet coverage or unavailable data shows `--`. Binance's SPOT/MARGIN/FUTURES daily snapshots cannot reconstruct the complete wallet overview and are not substituted for it.
+
+Wallet request failures and invalid amounts do not fall back to a partial account total. Hiding small wallet rows only affects the list, never the total.
+
 ## Updates
 
 Use `Check for Updates...` from the app menu to check GitHub Releases through Sparkle.

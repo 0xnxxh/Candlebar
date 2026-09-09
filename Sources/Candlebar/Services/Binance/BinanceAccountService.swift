@@ -7,9 +7,6 @@ struct StoredAPIKey: Equatable {
 }
 
 final class BinanceAccountService: @unchecked Sendable {
-    private static let stableAssets = Set(["USDT", "USDC", "FDUSD", "BUSD", "TUSD", "DAI"])
-    private static let dailySnapshotLookbackDays: Int64 = 7
-    private static let dailySnapshotLimit = 7
     private static let incomeLookbackDays: Int64 = 90
     private static let incomeHistoryLimit = 1000
     private static let millisecondsPerDay: Int64 = 24 * 60 * 60 * 1000
@@ -18,12 +15,15 @@ final class BinanceAccountService: @unchecked Sendable {
     private static let maxConcurrentIncomeRequests = 4
 
     private let session: URLSession
-    private var dailyChangeCache: DailyAccountChange?
+    private let baselineStore: AccountBaselineStore
+    private let clockLock = NSLock()
+    private var serverClock: (time: Int64, uptime: TimeInterval)?
     private var incomeRecordCache: [IncomeCacheKey: [String: IncomeRecord]] = [:]
     private var incomeWatermark: [IncomeCacheKey: Int64] = [:]
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = .shared, baselineStore: AccountBaselineStore = AccountBaselineStore()) {
         self.session = session
+        self.baselineStore = baselineStore
     }
 
     func validate(credentials: StoredAPIKey) async -> AccountOverview {
@@ -34,21 +34,32 @@ final class BinanceAccountService: @unchecked Sendable {
         do {
             let serverTime = try await fetchServerTime()
 
-            let spotAccount: SpotAccountPayload = try await signedRequest(
+            let walletPayload: [WalletBalancePayload] = try await signedRequest(
                 baseURL: MarketType.spot.accountBaseURL,
-                path: "/api/v3/account",
+                path: "/sapi/v1/asset/wallet/balance",
+                queryItems: [URLQueryItem(name: "quoteAsset", value: "USDT")],
                 credentials: credentials,
                 timestamp: serverTime,
             )
+            var wallets = try walletPayload.map { try $0.wallet() }
+            guard !wallets.isEmpty, Set(wallets.map(\.name)).count == wallets.count else {
+                throw BinanceServiceError.decodingFailed
+            }
+            let sampledAt = currentServerTime(fallback: serverTime)
+            let total = wallets.reduce(Decimal(0)) { $0 + $1.value }
             var sourceErrors: [String] = []
-            let usdMAccount: FuturesAccountPayload? = await optionalSignedRequest(
-                baseURL: MarketType.usdMFutures.accountBaseURL,
-                path: "/fapi/v3/account",
-                credentials: credentials,
-                timestamp: serverTime,
-                label: "USD-M ACCOUNT",
-                errors: &sourceErrors,
-            )
+            var baseline: AccountDailyBaseline?
+            do {
+                baseline = try baselineStore.baseline(wallets: wallets, apiKey: credentials.apiKey, now: sampledAt)
+            } catch {
+                sourceErrors.append("DAILY BASELINE: \(error.localizedDescription)")
+            }
+            let dailyChange = baseline?.change(current: wallets)
+            if let dailyChange {
+                for index in wallets.indices {
+                    wallets[index].change = dailyChange.walletChanges[wallets[index].name]
+                }
+            }
             let usdMPositions: [PositionRiskPayload] = await optionalSignedRequest(
                 baseURL: MarketType.usdMFutures.accountBaseURL,
                 path: "/fapi/v3/positionRisk",
@@ -65,14 +76,6 @@ final class BinanceAccountService: @unchecked Sendable {
                 label: "USD-M SYMBOL CONFIG",
                 errors: &sourceErrors,
             ) ?? []
-            let coinMAccount: CoinMAccountPayload? = await optionalSignedRequest(
-                baseURL: MarketType.coinMFutures.accountBaseURL,
-                path: "/dapi/v1/account",
-                credentials: credentials,
-                timestamp: serverTime,
-                label: "COIN-M ACCOUNT",
-                errors: &sourceErrors,
-            )
             let coinMPositions: [PositionRiskPayload] = await optionalSignedRequest(
                 baseURL: MarketType.coinMFutures.accountBaseURL,
                 path: "/dapi/v1/positionRisk",
@@ -81,12 +84,6 @@ final class BinanceAccountService: @unchecked Sendable {
                 label: "COIN-M POSITIONS",
                 errors: &sourceErrors,
             ) ?? []
-            let dailySnapshotChange = await cachedDailyAccountChange(
-                credentials: credentials,
-                now: serverTime,
-                errors: &sourceErrors,
-            )
-
             let usdMLeverageBySymbol = Dictionary(
                 uniqueKeysWithValues: usdMSymbolConfigs.map { ($0.symbol, String($0.leverage)) },
             )
@@ -114,23 +111,17 @@ final class BinanceAccountService: @unchecked Sendable {
                 market: .coinMFutures,
                 incomeBySymbol: coinMIncomeBySymbol,
             )
-            let spotValue = spotEstimatedValue(from: spotAccount)
-            let usdMWalletBalance = decimal(usdMAccount?.totalWalletBalance)
-            let usdEstimatedValue = usdEstimatedValue(spotValue: spotValue, usdMWalletBalance: usdMWalletBalance)
-
             return AccountOverview(
                 status: sourceErrors.isEmpty ? .live : .warning,
                 statusText: sourceErrors.isEmpty ? "ACCOUNT LIVE" : "ACCOUNT PARTIAL",
-                usdEstimatedValue: usdEstimatedValue,
-                usdEstimatedChangeToday: dailySnapshotChange?.change,
-                usdEstimatedChangePercentToday: dailySnapshotChange?.percent,
-                spotEstimatedValue: spotValue,
-                usdMWalletBalance: usdMWalletBalance,
-                usdMUnrealizedPnL: decimal(usdMAccount?.totalUnrealizedProfit),
-                coinMWalletBalance: decimal(coinMAccount?.totalWalletBalance),
-                coinMUnrealizedPnL: decimal(coinMAccount?.totalUnrealizedProfit),
+                usdEstimatedValue: total,
+                usdtChange: dailyChange?.amount,
+                usdtChangePercent: dailyChange?.percent,
+                wallets: wallets,
+                changeBaselineAt: dailyChange == nil ? nil : baseline?.sampledAt,
+                changeBasis: dailyChange == nil ? nil : baseline?.basis,
                 positions: positions,
-                updatedAt: Date(),
+                updatedAt: Date(timeIntervalSince1970: TimeInterval(sampledAt) / 1000),
                 message: sourceErrors.joined(separator: " / "),
             )
         } catch let error as BinanceServiceError {
@@ -138,13 +129,8 @@ final class BinanceAccountService: @unchecked Sendable {
                 status: .error,
                 statusText: accountStatusText(for: error),
                 usdEstimatedValue: nil,
-                usdEstimatedChangeToday: nil,
-                usdEstimatedChangePercentToday: nil,
-                spotEstimatedValue: nil,
-                usdMWalletBalance: nil,
-                usdMUnrealizedPnL: nil,
-                coinMWalletBalance: nil,
-                coinMUnrealizedPnL: nil,
+                usdtChange: nil,
+                usdtChangePercent: nil,
                 positions: [],
                 updatedAt: Date(),
                 message: error.localizedDescription,
@@ -154,13 +140,8 @@ final class BinanceAccountService: @unchecked Sendable {
                 status: .offline,
                 statusText: "OFFLINE",
                 usdEstimatedValue: nil,
-                usdEstimatedChangeToday: nil,
-                usdEstimatedChangePercentToday: nil,
-                spotEstimatedValue: nil,
-                usdMWalletBalance: nil,
-                usdMUnrealizedPnL: nil,
-                coinMWalletBalance: nil,
-                coinMUnrealizedPnL: nil,
+                usdtChange: nil,
+                usdtChangePercent: nil,
                 positions: [],
                 updatedAt: Date(),
                 message: error.localizedDescription,
@@ -178,6 +159,9 @@ final class BinanceAccountService: @unchecked Sendable {
             throw BinanceServiceError.httpStatus(http.statusCode)
         }
         let payload = try JSONDecoder().decode(ServerTimePayload.self, from: data)
+        clockLock.withLock {
+            serverClock = (payload.serverTime, ProcessInfo.processInfo.systemUptime)
+        }
         return payload.serverTime
     }
 
@@ -190,7 +174,7 @@ final class BinanceAccountService: @unchecked Sendable {
     ) async throws -> T {
         var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
         var items = queryItems
-        items.append(URLQueryItem(name: "timestamp", value: String(timestamp)))
+        items.append(URLQueryItem(name: "timestamp", value: String(currentServerTime(fallback: timestamp))))
         items.append(URLQueryItem(name: "recvWindow", value: "5000"))
         let query = items
             .map { item in
@@ -268,143 +252,12 @@ final class BinanceAccountService: @unchecked Sendable {
         }
     }
 
-    private func spotEstimatedValue(from payload: SpotAccountPayload) -> Decimal? {
-        let total = payload.balances.reduce(Decimal(0)) { partial, balance in
-            guard Self.stableAssets.contains(balance.asset) else {
-                return partial
-            }
-            return partial + (decimal(balance.free) ?? 0) + (decimal(balance.locked) ?? 0)
+    // Signing timestamps must keep advancing during sequential account/income requests.
+    private func currentServerTime(fallback: Int64) -> Int64 {
+        clockLock.withLock {
+            guard let serverClock else { return fallback }
+            return serverClock.time + Int64(max(0, ProcessInfo.processInfo.systemUptime - serverClock.uptime) * 1000)
         }
-        return total
-    }
-
-    private func usdEstimatedValue(spotValue: Decimal?, usdMWalletBalance: Decimal?) -> Decimal? {
-        guard spotValue != nil || usdMWalletBalance != nil else {
-            return nil
-        }
-        return (spotValue ?? 0) + (usdMWalletBalance ?? 0)
-    }
-
-    private func cachedDailyAccountChange(
-        credentials: StoredAPIKey,
-        now: Int64,
-        errors: inout [String],
-    ) async -> DailyAccountChange? {
-        let dayStart = utcDayStartMilliseconds(now)
-        if let dailyChangeCache, dailyChangeCache.dayStart == dayStart {
-            return dailyChangeCache
-        }
-
-        let spotSnapshot: DailyAccountSnapshotPayload? = await optionalSignedRequest(
-            baseURL: MarketType.spot.accountBaseURL,
-            path: "/sapi/v1/accountSnapshot",
-            queryItems: dailySnapshotQueryItems(type: "SPOT", now: now),
-            credentials: credentials,
-            timestamp: now,
-            label: "SPOT DAILY SNAPSHOT",
-            errors: &errors,
-        )
-        let futuresSnapshot: DailyAccountSnapshotPayload? = await optionalSignedRequest(
-            baseURL: MarketType.spot.accountBaseURL,
-            path: "/sapi/v1/accountSnapshot",
-            queryItems: dailySnapshotQueryItems(type: "FUTURES", now: now),
-            credentials: credentials,
-            timestamp: now,
-            label: "FUTURES DAILY SNAPSHOT",
-            errors: &errors,
-        )
-        guard let change = dailyAccountChange(
-            spotSnapshot: spotSnapshot,
-            futuresSnapshot: futuresSnapshot,
-            dayStart: dayStart,
-        ) else {
-            return nil
-        }
-
-        dailyChangeCache = change
-        return change
-    }
-
-    func dailySnapshotQueryItems(type: String, now: Int64) -> [URLQueryItem] {
-        let dayStart = utcDayStartMilliseconds(now)
-        let startTime = max(0, dayStart - Self.dailySnapshotLookbackDays * Self.millisecondsPerDay)
-        let endTime = dayStart
-        return [
-            URLQueryItem(name: "type", value: type),
-            URLQueryItem(name: "startTime", value: String(startTime)),
-            URLQueryItem(name: "endTime", value: String(endTime)),
-            URLQueryItem(name: "limit", value: String(Self.dailySnapshotLimit)),
-        ]
-    }
-
-    private func utcDayStartMilliseconds(_ now: Int64) -> Int64 {
-        let date = Date(timeIntervalSince1970: TimeInterval(now) / 1000)
-        return UTCTradingDay.millisecondsSince1970(for: UTCTradingDay.start(of: date))
-    }
-
-    func dailyAccountChange(
-        spotSnapshot: DailyAccountSnapshotPayload?,
-        futuresSnapshot: DailyAccountSnapshotPayload?,
-        dayStart: Int64,
-    ) -> DailyAccountChange? {
-        let todayValue = dailyAccountValue(
-            spotSnapshot: spotSnapshot,
-            futuresSnapshot: futuresSnapshot,
-            atOrBefore: dayStart,
-        )
-        let yesterdayValue = dailyAccountValue(
-            spotSnapshot: spotSnapshot,
-            futuresSnapshot: futuresSnapshot,
-            atOrBefore: max(0, dayStart - Self.millisecondsPerDay),
-        )
-        guard let todayValue, let yesterdayValue else {
-            return nil
-        }
-
-        let change = todayValue - yesterdayValue
-        let percent = yesterdayValue == 0 ? nil : (change / yesterdayValue) * 100
-        return DailyAccountChange(dayStart: dayStart, change: change, percent: percent)
-    }
-
-    private func dailyAccountValue(
-        spotSnapshot: DailyAccountSnapshotPayload?,
-        futuresSnapshot: DailyAccountSnapshotPayload?,
-        atOrBefore boundary: Int64,
-    ) -> Decimal? {
-        let spotValue = dailyAccountValue(spotSnapshot, atOrBefore: boundary)?.usdEstimatedValue
-        let futuresValue = dailyAccountValue(futuresSnapshot, atOrBefore: boundary)?.usdEstimatedValue
-        guard spotValue != nil || futuresValue != nil else {
-            return nil
-        }
-        return (spotValue ?? 0) + (futuresValue ?? 0)
-    }
-
-    private func dailyAccountValue(
-        _ payload: DailyAccountSnapshotPayload?,
-        atOrBefore boundary: Int64,
-    ) -> DailyAccountValue? {
-        guard payload?.code == 200,
-              let snapshot = payload?.snapshotVos
-                .filter({ $0.updateTime <= boundary })
-                .sorted(by: { $0.updateTime > $1.updateTime })
-                .first else {
-            return nil
-        }
-
-        let spotStableValue = snapshot.data.balances?.reduce(Decimal(0)) { partial, balance in
-            guard Self.stableAssets.contains(balance.asset) else {
-                return partial
-            }
-            return partial + (decimal(balance.free) ?? 0) + (decimal(balance.locked) ?? 0)
-        }
-        let usdMWalletBalance = snapshot.data.assets?.first { $0.asset == "USDT" }
-            .flatMap { decimal($0.walletBalance) }
-        guard spotStableValue != nil || usdMWalletBalance != nil else {
-            return nil
-        }
-        return DailyAccountValue(
-            usdEstimatedValue: (spotStableValue ?? 0) + (usdMWalletBalance ?? 0),
-        )
     }
 
     private func activePositions(
@@ -465,9 +318,10 @@ final class BinanceAccountService: @unchecked Sendable {
             label = "COIN-M INCOME"
         }
 
+        let accountID = SHA256.hash(data: Data(credentials.apiKey.utf8)).map { String(format: "%02x", $0) }.joined()
         let windowStart = incomeHistoryStartTime(now: timestamp)
         let requests = symbols.sorted().map { symbol -> (symbol: String, startTime: Int64) in
-            let key = IncomeCacheKey(market: market, symbol: symbol)
+            let key = IncomeCacheKey(accountID: accountID, market: market, symbol: symbol)
             guard let watermark = incomeWatermark[key] else {
                 return (symbol, windowStart)
             }
@@ -510,14 +364,14 @@ final class BinanceAccountService: @unchecked Sendable {
             return collected
         }
 
-        let activeKeys = Set(symbols.map { IncomeCacheKey(market: market, symbol: $0) })
+        let activeKeys = Set(symbols.map { IncomeCacheKey(accountID: accountID, market: market, symbol: $0) })
         incomeRecordCache = incomeRecordCache.filter { $0.key.market != market || activeKeys.contains($0.key) }
         incomeWatermark = incomeWatermark.filter { $0.key.market != market || activeKeys.contains($0.key) }
 
         var totals: [String: FuturesIncomeTotals] = [:]
         for result in fetched {
             errors.append(contentsOf: result.errors)
-            let key = IncomeCacheKey(market: market, symbol: result.symbol)
+            let key = IncomeCacheKey(accountID: accountID, market: market, symbol: result.symbol)
             var records = incomeRecordCache[key] ?? [:]
             for record in result.records {
                 records[record.id] = record
@@ -620,24 +474,20 @@ private struct ServerTimePayload: Decodable {
     let serverTime: Int64
 }
 
-private struct SpotAccountPayload: Decodable {
-    let balances: [SpotBalancePayload]
-}
+private struct WalletBalancePayload: Decodable {
+    let walletName: String
+    let balance: String
+    let activate: Bool
 
-private struct SpotBalancePayload: Decodable {
-    let asset: String
-    let free: String
-    let locked: String
-}
-
-private struct FuturesAccountPayload: Decodable {
-    let totalWalletBalance: String?
-    let totalUnrealizedProfit: String?
-}
-
-private struct CoinMAccountPayload: Decodable {
-    let totalWalletBalance: String?
-    let totalUnrealizedProfit: String?
+    func wallet() throws -> AccountWallet {
+        guard !walletName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              balance.range(of: #"^[+-]?[0-9]+(?:\.[0-9]+)?$"#, options: .regularExpression) != nil,
+              let value = Decimal(string: balance, locale: Locale(identifier: "en_US_POSIX")),
+              !value.isNaN else {
+            throw BinanceServiceError.decodingFailed
+        }
+        return AccountWallet(name: walletName, value: value)
+    }
 }
 
 private struct PositionRiskPayload: Decodable {
@@ -669,6 +519,7 @@ private struct IncomeHistoryPayload: Decodable {
 }
 
 private struct IncomeCacheKey: Hashable {
+    let accountID: String
     let market: MarketType
     let symbol: String
 }
@@ -715,40 +566,4 @@ private enum FuturesIncomeType: String, CaseIterable {
     case realizedPnL = "REALIZED_PNL"
     case fundingFee = "FUNDING_FEE"
     case commission = "COMMISSION"
-}
-
-struct DailyAccountChange {
-    let dayStart: Int64
-    let change: Decimal
-    let percent: Decimal?
-}
-
-private struct DailyAccountValue {
-    let usdEstimatedValue: Decimal
-}
-
-struct DailyAccountSnapshotPayload: Decodable {
-    let code: Int
-    let snapshotVos: [DailyAccountSnapshot]
-}
-
-struct DailyAccountSnapshot: Decodable {
-    let data: DailyAccountSnapshotData
-    let updateTime: Int64
-}
-
-struct DailyAccountSnapshotData: Decodable {
-    let balances: [DailySpotBalancePayload]?
-    let assets: [DailyFuturesAssetPayload]?
-}
-
-struct DailySpotBalancePayload: Decodable {
-    let asset: String
-    let free: String
-    let locked: String
-}
-
-struct DailyFuturesAssetPayload: Decodable {
-    let asset: String
-    let walletBalance: String
 }

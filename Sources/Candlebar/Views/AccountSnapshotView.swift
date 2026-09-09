@@ -67,69 +67,49 @@ struct AccountSummaryView: View {
     var decimalPlaces: Int
 
     var body: some View {
-        VStack(spacing: 6) {
-            ForEach(rows) { row in
-                AccountSummaryRow(row: row, hideBalances: hideBalances)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(LocalizedCopy.accountChangeColumns(overview.changeBasis, language: language))
+                .font(PixelFont.tiny)
+                .foregroundStyle(PixelColors.muted)
+            Grid(alignment: .trailing, horizontalSpacing: 6, verticalSpacing: 6) {
+                ForEach(rows) { row in
+                    AccountSummaryRow(row: row, hideBalances: hideBalances)
+                }
             }
+            Text(LocalizedCopy.accountBaselineText(overview.changeBaselineAt, basis: overview.changeBasis, language: language))
+                .font(PixelFont.tiny)
+                .foregroundStyle(PixelColors.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(LocalizedCopy.text(.summaryTotalHelp, language: language))
         }
     }
 
-    private var rows: [AccountSummaryMetric] {
-        [
+    var rows: [AccountSummaryMetric] {
+        let total = AccountSummaryMetric(
+            title: LocalizedCopy.text(.summaryTotal, language: language),
+            value: overview.usdEstimatedValue,
+            change: overview.usdtChange,
+            help: LocalizedCopy.text(.summaryTotalHelp, language: language),
+        )
+        return [total] + overview.wallets.filter { wallet in
+            !hideLowValueAccounts || wallet.value.magnitude >= 1 || (wallet.change?.magnitude ?? 0) >= 1
+        }.map { wallet in
             AccountSummaryMetric(
-                title: LocalizedCopy.text(.summaryTotal, language: language),
-                value: overview.usdEstimatedValue,
-                change: overview.usdEstimatedChangeToday,
-                unavailableChangeText: missingPreviousDayText,
-                shouldHideWhenLowValue: false,
-                help: LocalizedCopy.text(.summaryTotalHelp, language: language),
-            ),
-            AccountSummaryMetric(
-                title: LocalizedCopy.text(.summarySpot, language: language),
-                value: overview.spotEstimatedValue ?? 0,
-                change: 0,
-                unavailableChangeText: nil,
-                shouldHideWhenLowValue: true,
-                help: "Spot value is free plus locked stablecoin balances only. Spot PnL is unavailable without cost basis, so change is shown as +0 USDT.",
-            ),
-            AccountSummaryMetric(
-                title: LocalizedCopy.text(.summaryUsdM, language: language),
-                value: overview.usdMWalletBalance,
-                change: overview.usdMUnrealizedPnL,
-                unavailableChangeText: nil,
-                shouldHideWhenLowValue: true,
-                help: "USD-M wallet balance and unrealized PnL from Binance futures account data.",
-            ),
-            AccountSummaryMetric(
-                title: LocalizedCopy.text(.summaryCoinM, language: language),
-                value: overview.coinMWalletBalance ?? 0,
-                change: overview.coinMUnrealizedPnL ?? 0,
-                unavailableChangeText: nil,
-                shouldHideWhenLowValue: true,
-                help: "COIN-M wallet balance and unrealized PnL are shown separately because coin-margined balances are not added to Total.",
-            ),
-        ].filter { metric in
-            !hideLowValueAccounts || !metric.shouldHideWhenLowValue || metric.valueMagnitude >= 1
+                title: LocalizedCopy.walletName(wallet.name, language: language),
+                value: wallet.value,
+                change: wallet.change,
+                help: LocalizedCopy.text(.summaryWalletHelp, language: language),
+            )
         }
-    }
-
-    private var missingPreviousDayText: String {
-        LocalizedCopy.text(.summaryPreviousDayUnavailable, language: language)
     }
 }
 
-private struct AccountSummaryMetric: Identifiable {
-    let id = UUID()
+struct AccountSummaryMetric: Identifiable {
+    var id: String { title }
     var title: String
     var value: Decimal?
     var change: Decimal?
-    var unavailableChangeText: String?
-    var shouldHideWhenLowValue: Bool
     var help: String
-
-    var valueMagnitude: Decimal {
-        (value ?? 0).magnitude
-    }
 }
 
 private struct AccountSummaryRow: View {
@@ -137,32 +117,29 @@ private struct AccountSummaryRow: View {
     var hideBalances: Bool
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        GridRow(alignment: .firstTextBaseline) {
             Text(row.title)
                 .font(PixelFont.tiny)
                 .foregroundStyle(PixelColors.muted)
-                .frame(width: 64, alignment: .leading)
-
-            Spacer(minLength: 0)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(minWidth: 64, maxWidth: .infinity, alignment: .leading)
 
             Text(display(valueText))
                 .font(PixelFont.tiny)
                 .foregroundStyle(PixelColors.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
-                .frame(width: 110, alignment: .trailing)
 
             Text("/")
                 .font(PixelFont.tiny)
                 .foregroundStyle(PixelColors.muted)
-                .frame(width: 10, alignment: .center)
 
             Text(display(changeText))
                 .font(PixelFont.tiny)
                 .foregroundStyle(signedColor(for: changeText))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
-                .frame(width: 110, alignment: .trailing)
         }
         .help(row.help)
     }
@@ -176,7 +153,7 @@ private struct AccountSummaryRow: View {
 
     private var changeText: String {
         guard let change = row.change else {
-            return row.unavailableChangeText ?? "--"
+            return "--"
         }
         return "\(CandleFormat.signedMoney(change)) USDT"
     }
