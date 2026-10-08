@@ -22,6 +22,8 @@ struct ToggleRow: View {
                 .foregroundStyle(isOn ? PixelColors.up : PixelColors.muted)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityValue(LocalizedCopy.text(isOn ? .on : .off, language: store.preferences.language))
         }
         .padding(.vertical, 6)
     }

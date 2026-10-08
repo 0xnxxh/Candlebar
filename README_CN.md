@@ -17,6 +17,7 @@ Candlebar 是一个 macOS 菜单栏应用，用来快速查看加密货币价格
 - 可选的屏幕边缘侧边栏：每个关注交易对一行，直接显示实时价格、当日涨跌幅和迷你走势线，另有账户行；拖动即可停靠到任意显示器的左侧或右侧。
 - 通过只读 Binance API key 查看账户概览、余额、持仓、未实现盈亏、杠杆和强平参考。
 - 设置保存在本机，API key 存入 macOS Keychain。
+- 可选的开机自启，由 macOS 登录项管理。
 - 支持英文和中文界面。
 - 通过 Sparkle 从 GitHub Releases 检查和安装更新。
 
@@ -39,6 +40,12 @@ xattr -cr /Applications/Candlebar.app
 4. 从 `Applications` 打开 `Candlebar.app`。
 
 macOS 仍可能在首次启动时提示未签名应用。如果出现提示，请到系统设置的隐私与安全性中允许打开 Candlebar。
+
+## 开机自启
+
+将 Candlebar 安装到 `Applications` 后，打开**设置 > 通用**，开启**开机自启**。下次登录 Mac 时，Candlebar 会自动在菜单栏启动。关闭开关会移除登录项，当前运行的应用仍会保持打开。
+
+默认关闭。开关读取 macOS 的实际登录项状态，也会反映你在系统设置中的修改。如果显示“等待批准”，点击**打开登录项设置**并允许 Candlebar，再返回应用刷新状态。注册失败时，设置页会显示具体错误。
 
 ## Binance API Key
 

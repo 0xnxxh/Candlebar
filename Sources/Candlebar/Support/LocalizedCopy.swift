@@ -19,6 +19,15 @@ enum CopyKey {
     case deleteKey
     case diagnostics
     case exportDiagnostics
+    case general
+    case launchAtLogin
+    case launchAtLoginDescription
+    case launchAtLoginEnabled
+    case launchAtLoginDisabled
+    case launchAtLoginRequiresApproval
+    case launchAtLoginUnavailable
+    case launchAtLoginFailed
+    case openLoginItemsSettings
     case headerKlineInterval
     case headerKlineWidth
     case hideBalances
@@ -188,6 +197,15 @@ enum LocalizedCopy {
         case .deleteKey: "DELETE KEY"
         case .diagnostics: "DIAGNOSTICS"
         case .exportDiagnostics: "EXPORT REDACTED DIAGNOSTICS"
+        case .general: "GENERAL"
+        case .launchAtLogin: "Launch at login"
+        case .launchAtLoginDescription: "Start Candlebar in the menu bar when you log in to your Mac."
+        case .launchAtLoginEnabled: "Enabled. macOS will launch Candlebar at your next login."
+        case .launchAtLoginDisabled: "Disabled. Candlebar will not launch automatically."
+        case .launchAtLoginRequiresApproval: "Approval required. Allow Candlebar in System Settings > General > Login Items."
+        case .launchAtLoginUnavailable: "Login item unavailable. Install Candlebar in Applications and try again."
+        case .launchAtLoginFailed: "Could not change launch at login:"
+        case .openLoginItemsSettings: "Open Login Items Settings"
         case .headerKlineInterval: "TOP KLINE"
         case .headerKlineWidth: "TOP WIDTH"
         case .hideBalances: "HIDE BALANCES"
@@ -278,6 +296,15 @@ enum LocalizedCopy {
         case .deleteKey: "删除密钥"
         case .diagnostics: "诊断"
         case .exportDiagnostics: "导出脱敏诊断"
+        case .general: "通用"
+        case .launchAtLogin: "开机自启"
+        case .launchAtLoginDescription: "登录 Mac 后自动在菜单栏启动 Candlebar。"
+        case .launchAtLoginEnabled: "已启用。macOS 将在下次登录时启动 Candlebar。"
+        case .launchAtLoginDisabled: "已关闭。Candlebar 不会自动启动。"
+        case .launchAtLoginRequiresApproval: "等待批准。请在系统设置 > 通用 > 登录项中允许 Candlebar。"
+        case .launchAtLoginUnavailable: "登录项不可用。请将 Candlebar 安装到 Applications 后重试。"
+        case .launchAtLoginFailed: "无法更改开机自启："
+        case .openLoginItemsSettings: "打开登录项设置"
         case .headerKlineInterval: "顶部 K 线"
         case .headerKlineWidth: "顶部宽度"
         case .hideBalances: "隐藏金额"

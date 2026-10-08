@@ -65,6 +65,8 @@ struct SettingsView: View {
     @ViewBuilder
     private var selectedTabContent: some View {
         switch selectedTab {
+        case .general:
+            SettingsGeneralTab()
         case .watchlist:
             SettingsWatchlistTab()
         case .apiKeys:
@@ -78,6 +80,7 @@ struct SettingsView: View {
 }
 
 enum SettingsTab: CaseIterable, Identifiable {
+    case general
     case watchlist
     case apiKeys
     case appearance
@@ -87,6 +90,8 @@ enum SettingsTab: CaseIterable, Identifiable {
 
     func title(language: AppLanguage) -> String {
         switch self {
+        case .general:
+            LocalizedCopy.text(.general, language: language)
         case .watchlist:
             LocalizedCopy.text(.watchlist, language: language)
         case .apiKeys:
@@ -100,6 +105,7 @@ enum SettingsTab: CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .general: "gearshape"
         case .watchlist: "list.bullet"
         case .apiKeys: "key"
         case .appearance: "paintpalette"

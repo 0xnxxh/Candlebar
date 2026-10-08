@@ -17,6 +17,7 @@ It is built for quick glances: one default symbol stays in the menu bar, and the
 - Optional screen-edge sidebar with one row per watchlist symbol showing live price, daily change, and a trend sparkline, plus an account row; drag it to dock left or right, on any display.
 - Read-only Binance account overview for balances, positions, unrealized PnL, leverage, and liquidation references.
 - Local-only settings and Keychain storage for API credentials.
+- Optional launch at login, managed by macOS Login Items.
 - English and Chinese interface.
 - App updates through Sparkle from GitHub Releases.
 
@@ -39,6 +40,12 @@ xattr -cr /Applications/Candlebar.app
 4. Open `Candlebar.app` from `Applications`.
 
 macOS may still show a first-run warning for unsigned apps. If that happens, open System Settings and allow Candlebar from Privacy & Security.
+
+## Launch at login
+
+After installing Candlebar in `Applications`, open **Settings > General** and turn on **Launch at login**. Candlebar will start in the menu bar when you next log in to your Mac. Turn the switch off to remove the login item; the running app stays open.
+
+This is off by default. The switch reads the macOS login-item state, including changes made in System Settings. If approval is required, use **Open Login Items Settings** to allow Candlebar, then return to the app to refresh its status. Registration failures are displayed in Settings.
 
 ## Binance API Key
 
