@@ -153,32 +153,14 @@ private struct HeaderView: View {
                     }
                 }
 
-                HStack(alignment: .center, spacing: 10) {
-                    Text(CandleFormat.price(ticker?.lastPrice, decimalPlaces: store.preferences.priceDecimalPlaces))
-                        .font(.system(size: 30, weight: .black, design: .monospaced))
-                        .minimumScaleFactor(0.65)
-                        .lineLimit(1)
-                        .padding(.horizontal, 3)
-                        .pixelFlash(store.preferences.pixelTheme ? ticker?.movement ?? .flat : .flat)
-                        .frame(maxWidth: 120, alignment: .leading)
-
-                    Spacer()
-
-                    IntradayCandlestickView(
-                        series: intraday,
-                        currentPrice: ticker?.lastPrice,
-                        displayMode: store.preferences.headerChartDisplayMode,
-                        tint: intradayColor(intradayPercent),
-                    )
-                    .frame(width: 138, height: 72)
-
-                    Spacer()
-
-                    Text(CandleFormat.percent(intradayPercent))
-                        .font(PixelFont.number)
-                        .foregroundStyle(intradayColor(intradayPercent))
-                        .frame(width: 68, alignment: .trailing)
-                }
+                HeaderQuoteView(
+                    price: CandleFormat.price(ticker?.lastPrice, decimalPlaces: store.preferences.priceDecimalPlaces),
+                    movement: store.preferences.pixelTheme ? ticker?.movement ?? .flat : .flat,
+                    series: intraday,
+                    currentPrice: ticker?.lastPrice,
+                    displayMode: store.preferences.headerChartDisplayMode,
+                    percent: intradayPercent,
+                )
 
                 HStack {
                     Text("\(LocalizedCopy.text(.updated, language: store.preferences.language)) \(CandleFormat.relativeTime(ticker?.updatedAt))")
@@ -196,6 +178,74 @@ private struct HeaderView: View {
                 }
             }
         }
+    }
+}
+
+struct HeaderQuoteView: View {
+    var price: String
+    var movement: PriceMovement
+    var series: IntradaySeries?
+    var currentPrice: Decimal?
+    var displayMode: IntradayChartDisplayMode
+    var percent: Decimal?
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            quoteRow(fontSize: 30)
+            quoteRow(fontSize: 24)
+            quoteRow(fontSize: 20)
+            VStack(alignment: .leading, spacing: 10) {
+                ViewThatFits(in: .horizontal) {
+                    priceText(fontSize: 30)
+                    priceText(fontSize: 24)
+                    priceText(fontSize: 20)
+                    priceText(fontSize: 16)
+                    priceText(fontSize: 12)
+                    priceText(fontSize: 8)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: 10) {
+                    chart
+                    Spacer(minLength: 0)
+                    percentText
+                }
+            }
+        }
+    }
+
+    private func quoteRow(fontSize: CGFloat) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            priceText(fontSize: fontSize)
+            chart
+            percentText
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func priceText(fontSize: CGFloat) -> some View {
+        Text(price)
+            .font(.system(size: fontSize, weight: .black, design: .monospaced))
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, 3)
+            .pixelFlash(movement)
+    }
+
+    private var chart: some View {
+        IntradayCandlestickView(
+            series: series,
+            currentPrice: currentPrice,
+            displayMode: displayMode,
+            tint: intradayColor(percent),
+        )
+        .frame(width: 138, height: 72)
+    }
+
+    private var percentText: some View {
+        Text(CandleFormat.percent(percent))
+            .font(PixelFont.number)
+            .foregroundStyle(intradayColor(percent))
+            .frame(width: 68, alignment: .trailing)
     }
 }
 
